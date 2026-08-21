@@ -1,0 +1,14 @@
+{
+  "$schema": "https://schema.railpack.com",
+  "provider": "node",
+  "packages": {
+    "node": "22"
+  },
+  "deploy": {
+    "aptPackages": ["...", "ffmpeg", "curl"],
+    "variables": {
+      "LANG": "en_US.UTF-8",
+      "LC_ALL": "en_US.UTF-8"
+    }
+  }
+}

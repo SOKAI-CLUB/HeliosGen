@@ -48,9 +48,10 @@ export async function POST(req: NextRequest) {
   } = body;
 
   const userId = await resolveUserId(req);
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const apiKey = (userId ? await getKieTokenForUser(userId) : null) ?? process.env.KIE_API_TOKEN ?? null;
-  if (!apiKey) return NextResponse.json({ error: "No Kie.ai API key configured. Add one in Settings." }, { status: 401 });
+  const apiKey = await getKieTokenForUser(userId);
+  if (!apiKey) return NextResponse.json({ error: "The shared Kie.ai API key is not configured on the server." }, { status: 503 });
 
   const callbackBase = process.env.CALLBACK_BASE_URL;
   const callBackUrl = rawCallBackUrl || (callbackBase ? `${callbackBase.replace(/\/$/, "")}/api/callback` : undefined);
@@ -363,7 +364,7 @@ export async function POST(req: NextRequest) {
 
   if (!createRes.ok) {
     if (createRes.status === 401) {
-      return NextResponse.json({ error: "Invalid Kie.ai API key — please update it in Settings." }, { status: 401 });
+      return NextResponse.json({ error: "The shared Kie.ai API key is invalid. Contact the administrator." }, { status: 401 });
     }
     const errText = await createRes.text();
     console.error("[generate-video] kie.ai HTTP error:", createRes.status, errText);

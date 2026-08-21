@@ -35,14 +35,14 @@ export default function KieBanner() {
         <line x1="12" y1="17" x2="12.01" y2="17" />
       </svg>
       <span style={{ fontSize: "12px", color: "rgba(239,68,68,0.9)", fontWeight: 500 }}>
-        No Kie.ai API key configured — generation is disabled.
+        The shared Kie.ai API key is not configured — generation is disabled.
       </span>
       <span style={{
         fontSize: "11px", fontWeight: 600, color: "rgba(239,68,68,0.7)",
         background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.25)",
         borderRadius: "5px", padding: "2px 8px", marginLeft: "4px",
       }}>
-        Add in Settings →
+        Contact admin →
       </span>
     </button>
   );

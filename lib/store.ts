@@ -215,8 +215,8 @@ interface WorkflowStore {
   setSettingsOpen:           (v: boolean) => void;
   authModalOpen:             boolean;
   setAuthModalOpen:          (v: boolean) => void;
-  authModalView:             "signin" | "signup" | "forgot";
-  setAuthModalView:          (v: "signin" | "signup" | "forgot") => void;
+  authModalView:             "signin" | "forgot";
+  setAuthModalView:          (v: "signin" | "forgot") => void;
   resetPasswordModalOpen:    boolean;
   setResetPasswordModalOpen: (v: boolean) => void;
   showDashboard:             boolean;
