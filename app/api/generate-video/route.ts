@@ -61,9 +61,13 @@ export async function POST(req: NextRequest) {
 
   const resolution = rawResolution || cfg.defaultResolution || "480p";
   const { apiInput } = cfg;
+  const isSeedance25EditModel = cfg.id === "seedance-2-5-edit";
+  const effectiveAspectRatio = isSeedance25EditModel ? "adaptive" : aspectRatio;
 
   // Clamp duration to model limits (motion-control has no duration field)
-  const clampedDuration = apiInput.durationMax > 0
+  const clampedDuration = isSeedance25EditModel
+    ? -1
+    : apiInput.durationMax > 0
     ? Math.max(apiInput.durationMin, Math.min(apiInput.durationMax, Number(duration)))
     : 0;
 
@@ -98,7 +102,7 @@ export async function POST(req: NextRequest) {
     ]);
 
     input = {
-      [apiInput.aspectRatioKey!]: aspectRatio,
+      [apiInput.aspectRatioKey!]: effectiveAspectRatio,
       [apiInput.durationKey!]:    clampedDuration,
     };
 
@@ -408,7 +412,7 @@ export async function POST(req: NextRequest) {
   if (GUEST_MODE) {
     guestDb.insertGeneration({
       task_id: taskId, user_id: userId, generation_type: "video",
-      status: "pending", model: videoModel, prompt, aspect_ratio: aspectRatio,
+      status: "pending", model: videoModel, prompt, aspect_ratio: effectiveAspectRatio,
       duration: clampedDuration, kling_mode: mode,
       sound: cfg.sound ? Boolean(sound) : false,
       reference_image_urls: referenceUrls,
@@ -421,7 +425,7 @@ export async function POST(req: NextRequest) {
       status:               "pending",
       model:                videoModel,
       prompt,
-      aspect_ratio:         aspectRatio,
+      aspect_ratio:         effectiveAspectRatio,
       duration:             clampedDuration,
       kling_mode:           mode,
       sound:                cfg.sound ? Boolean(sound) : false,

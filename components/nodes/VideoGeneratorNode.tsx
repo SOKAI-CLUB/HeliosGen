@@ -814,6 +814,27 @@ export default function VideoGeneratorNode({ id, data, selected }: NodeProps<Vid
       (url) => limitedResources.find((r) => r.url === url) ?? { url, label: "element" }
     );
 
+    const requiredHandleHasContent = (handle: string): boolean => {
+      if (handle === "prompt") return Boolean(finalPrompt.trim());
+      if (handle === "startFrame") return Boolean(upstream.startFrameUrl);
+      if (handle === "endFrame") return Boolean(upstream.endFrameUrl);
+      if (handle === "resource") return orderedResources.length > 0;
+      if (handle === "videoRef") return Boolean(upstream.videoRefUrl);
+      if (handle === "referenceVideo") return upstream.referenceVideoUrls.length > 0;
+      if (handle === "audioRef") return upstream.referenceAudioUrls.length > 0;
+      return true;
+    };
+    const missingRequiredHandles = (cfg.requiredHandles ?? []).filter(
+      (handle) => !requiredHandleHasContent(handle)
+    );
+    if (missingRequiredHandles.length > 0) {
+      setErrorHandles(new Set(missingRequiredHandles));
+      setTimeout(() => setErrorHandles(new Set()), 1400);
+      updateNodeData(id, { hasError: true });
+      addToast("Connect all required inputs for this model.", "error");
+      return;
+    }
+
     if (!cfg.promptOptional && !finalPrompt.trim()) {
       setErrorHandles(new Set(["prompt"]));
       setTimeout(() => setErrorHandles(new Set()), 1400);
