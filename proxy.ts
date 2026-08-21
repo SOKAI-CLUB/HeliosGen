@@ -10,7 +10,8 @@ export async function proxy(request: NextRequest) {
   let supabaseResponse = response;
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    (process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)!,
     {
       cookies: {
         getAll() {
@@ -34,6 +35,6 @@ export async function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     // Skip Next.js internals, static files, and server-to-server API routes
-    "/((?!_next/static|_next/image|favicon.ico|api/callback|api/upload-to-r2).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/callback|api/health|api/upload-to-r2).*)",
   ],
 };

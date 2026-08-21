@@ -116,8 +116,8 @@ export async function POST(req: NextRequest) {
   const apiKey = await getKieToken(req);
   if (!apiKey) {
     return new Response(
-      JSON.stringify({ error: "No Kie.ai API key configured. Add one in Settings." }),
-      { status: 401, headers: { "Content-Type": "application/json" } }
+      JSON.stringify({ error: "The shared Kie.ai API key is not configured on the server." }),
+      { status: 503, headers: { "Content-Type": "application/json" } }
     );
   }
 

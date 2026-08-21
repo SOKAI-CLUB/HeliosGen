@@ -1,10 +1,9 @@
-import path from "node:path";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["192.168.64.2"],
   turbopack: {
-    root: path.join(__dirname),
+    root: process.cwd(),
   },
   experimental: {
     proxyClientMaxBodySize: '30mb',

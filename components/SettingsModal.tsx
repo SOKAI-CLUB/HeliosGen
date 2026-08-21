@@ -417,6 +417,8 @@ const INPUT_STYLE: React.CSSProperties = {
   width: "100%",
 };
 
+const KIE_MANAGED_BY_ADMIN = process.env.NEXT_PUBLIC_GUEST_MODE !== "true";
+
 function ApiKeysPanel({
   azureBaseUrl,
   onBaseUrlChange,
@@ -529,7 +531,9 @@ function ApiKeysPanel({
           API Keys
         </h2>
         <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.28)", marginTop: "6px", lineHeight: 1.5 }}>
-          Your Kie.ai key is stored securely on the server — it is never exposed to the browser.
+          {KIE_MANAGED_BY_ADMIN
+            ? "The shared Kie.ai key is managed on the server and is never exposed to users."
+            : "Your Kie.ai key is stored on the server and is never exposed to the browser."}
         </p>
       </div>
 
@@ -570,12 +574,20 @@ function ApiKeysPanel({
                 padding: "2px 7px", letterSpacing: "0.04em",
               }}
             >
-              SAVED
+              {KIE_MANAGED_BY_ADMIN ? "SHARED" : "SAVED"}
             </span>
           )}
         </div>
 
-        {kieKeyStatus === "unknown" ? (
+        {KIE_MANAGED_BY_ADMIN ? (
+          <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.35)", margin: 0, lineHeight: 1.5 }}>
+            {kieKeyStatus === "unknown"
+              ? "Checking the shared server configuration…"
+              : kieKeyStatus === "set"
+              ? "Configured by the administrator and available to every account."
+              : "The administrator has not configured the shared Kie.ai key yet."}
+          </p>
+        ) : kieKeyStatus === "unknown" ? (
           <div style={{ display: "flex", gap: "8px" }}>
             <div style={{
               flex: 1, height: "31px", borderRadius: "7px",

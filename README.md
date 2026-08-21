@@ -92,7 +92,7 @@ You only pay for what you generate.
 - Reference image support
 - Parallel & sequential pipeline execution
 - Shareable public workflows
-- Per-user API keys
+- Server-managed shared Kie.ai key
 - Real-time generation history
 - Self-hostable architecture
 - Modern responsive UI
@@ -181,25 +181,44 @@ npm run dev
 Requirements:
 - Supabase
 - Cloudflare R2
-- Kie.ai API key
+- One shared Kie.ai API key
 
 ### 3a. Database setup
 
-Open the **SQL Editor** in your Supabase project and run the two migration files in order:
+The recommended setup uses a dedicated Supabase project and its standard
+`public` schema.
+
+1. Open **SQL Editor** in Supabase and run:
+   **`supabase/migrations/20260820000000_public_schema.sql`**
+
+The older two-file setup below is kept only for existing installations:
 
 1. **`supabase-setup.sql`** — core tables (generations, uploads, spaces, settings)
 2. **`supabase-folders.sql`** — gallery folders & folder items
 
-### 3b. Environment variables
+### 3b. Private account access
+
+Disable public registrations in **Supabase → Authentication → Sign In / Providers → Email**:
+
+- turn off **Allow new users to sign up**;
+- turn off **Confirm email**.
+
+Create accounts yourself from **Authentication → Users → Add user**, with the
+email already confirmed. Every account then uses the same server-side Kie.ai key
+without seeing or entering it.
+
+### 3c. Environment variables
 
 Create `.env.local`:
 
 ```env
 CALLBACK_BASE_URL=https://your-domain.com
+KIE_API_KEY=your_shared_key
 
 NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
+SUPABASE_SECRET_KEY=
+NEXT_PUBLIC_SUPABASE_SCHEMA=public
 
 R2_ACCOUNT_ID=
 R2_ACCESS_KEY_ID=
@@ -262,15 +281,31 @@ In **Settings → Image Models**, set GPT Image 2's provider toggle to **Codex C
 
 # 🌍 Deployment
 
-Recommended platforms:
-- Vercel
-- Railway
-- Render
-- Fly.io
+Railway is the recommended target for the full application because HeliosGen
+uses long-running callbacks, SSE, temporary files, and optional FFmpeg/Codex
+processes. The committed `railway.json` pins one always-on replica and provides
+a health check.
+
+Required Railway variables are the same as the cloud-mode variables above,
+plus:
+
+```env
+GUEST_MODE=false
+NEXT_PUBLIC_GUEST_MODE=false
+NEXT_PUBLIC_SUPABASE_SCHEMA=public
+```
+
+Node 22 plus the runtime `ffmpeg` and `curl` packages are pinned in
+`railpack.json`.
+
+Deploy from the repository root:
 
 ```bash
-npm run build && npm start
+railway up
 ```
+
+After Railway creates a public domain, set `CALLBACK_BASE_URL` to that HTTPS
+origin and configure the same origin as the Supabase Auth Site URL.
 
 ---
 
@@ -296,4 +331,3 @@ MIT License
 <p align="center">
   Built for creators building the future of AI workflows.
 </p>
-

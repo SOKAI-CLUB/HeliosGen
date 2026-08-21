@@ -5,52 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useWorkflowStore } from "@/lib/store";
 import { useIsMobile } from "@/hooks/use-mobile";
 
-type View = "signin" | "signup" | "forgot";
-
-function PasswordStrengthBar({ password }: { password: string }) {
-  const score = !password
-    ? 0
-    : password.length < 6
-    ? 1
-    : password.length < 10 || !/[^a-zA-Z0-9]/.test(password)
-    ? 2
-    : password.length < 14
-    ? 3
-    : 4;
-
-  const label = ["", "WEAK", "FAIR", "GOOD", "STRONG"][score];
-  const color = ["", "#ef4444", "#f59e0b", "#2DD4BF", "#2DD4BF"][score];
-  const segments = 4;
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
-      <div style={{ display: "flex", gap: "4px" }}>
-        {Array.from({ length: segments }).map((_, i) => (
-          <div
-            key={i}
-            style={{
-              flex: 1,
-              height: "3px",
-              borderRadius: "99px",
-              background: i < score ? color : "rgba(255,255,255,0.1)",
-              transition: "background 250ms",
-            }}
-          />
-        ))}
-      </div>
-      {password.length > 0 && (
-        <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <span style={{ fontSize: "10px", letterSpacing: "0.08em", color: "rgba(255,255,255,0.4)" }}>
-            STRENGTH
-          </span>
-          <span style={{ fontSize: "10px", letterSpacing: "0.08em", color, fontWeight: 600 }}>
-            {label}
-          </span>
-        </div>
-      )}
-    </div>
-  );
-}
+type View = "signin" | "forgot";
 
 const ANIM_MS = 220;
 const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
@@ -116,17 +71,9 @@ export default function AuthModal() {
       return;
     }
 
-    const fn = mode === "signin"
-      ? supabase.auth.signInWithPassword({ email, password })
-      : supabase.auth.signUp({ email, password });
-
-    const { error: err } = await fn;
+    const { error: err } = await supabase.auth.signInWithPassword({ email, password });
     setBusy(false);
     if (err) { setError(err.message); return; }
-    if (mode === "signup") {
-      setError("Check your email to confirm your account.");
-      return;
-    }
     setOpen(false);
   };
 
@@ -314,17 +261,13 @@ export default function AuthModal() {
                 fontSize: "10px", fontWeight: 600, letterSpacing: "0.1em",
                 color: "rgba(255,255,255,0.38)", marginBottom: "6px",
               }}>
-                {mode === "forgot" ? "RESET PASSWORD" : mode === "signup" ? "CREATE ACCOUNT" : "WELCOME BACK"}
+                {mode === "forgot" ? "RESET PASSWORD" : "WELCOME BACK"}
               </p>
               <h2 style={{
                 fontSize: isMobile ? "20px" : "24px", fontWeight: 700, color: "#fff",
                 letterSpacing: "-0.02em", lineHeight: 1.2,
               }}>
-                {mode === "forgot"
-                  ? "Reset your password"
-                  : mode === "signup"
-                  ? "Sign up with email"
-                  : "Sign in with email"}
+                {mode === "forgot" ? "Reset your password" : "Sign in with email"}
               </h2>
             </div>
             <button
@@ -449,64 +392,25 @@ export default function AuthModal() {
                     </button>
                   }
                 />
-                <div style={{ visibility: mode === "signup" ? "visible" : "hidden" }}>
-                  <PasswordStrengthBar password={password} />
-                </div>
               </div>
 
-              {error && (
-                <ErrorMsg
-                  text={error}
-                  muted={error.startsWith("Check")}
-                />
-              )}
+              {error && <ErrorMsg text={error} />}
 
               <PrimaryButton
                 busy={busy}
-                label={mode === "signin" ? "Sign in" : "Create account"}
+                label="Sign in"
                 arrow
                 compact={isMobile}
               />
 
-              {/* Footer link */}
               <p style={{
                 fontSize: "13px", color: "rgba(255,255,255,0.38)",
                 textAlign: "center", marginTop: "2px",
               }}>
-                {mode === "signin" ? (
-                  <>
-                    New to HeliosGen?{" "}
-                    <button
-                      type="button"
-                      onClick={() => { setMode("signup"); setError(""); }}
-                      style={{
-                        color: "#2DD4BF", background: "none", border: "none",
-                        cursor: "pointer", fontFamily: "inherit", fontSize: "13px",
-                        fontWeight: 500,
-                      }}
-                    >
-                      Create an account
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    Already on HeliosGen?{" "}
-                    <button
-                      type="button"
-                      onClick={() => { setMode("signin"); setError(""); }}
-                      style={{
-                        color: "#2DD4BF", background: "none", border: "none",
-                        cursor: "pointer", fontFamily: "inherit", fontSize: "13px",
-                        fontWeight: 500,
-                      }}
-                    >
-                      Sign in instead
-                    </button>
-                  </>
-                )}
+                Accounts are created by the HeliosGen administrator.
               </p>
 
-              <div style={{ textAlign: "center", marginTop: "-6px", visibility: mode === "signin" ? "visible" : "hidden" }}>
+              <div style={{ textAlign: "center", marginTop: "-6px" }}>
                 <button
                   type="button"
                   onClick={() => { setMode("forgot"); setError(""); }}
