@@ -516,7 +516,7 @@ export async function POST(req: NextRequest) {
 
   // ── Kie.ai branch ─────────────────────────────────────────────────────────────
   const kieToken = currentUserId ? await getKieTokenForUser(currentUserId) : null;
-  if (!kieToken) return NextResponse.json({ error: "The shared Kie.ai API key is not configured on the server." }, { status: 503 });
+  if (!kieToken) return NextResponse.json({ error: "No Kie.ai API key is configured. Add a personal key in Settings or configure the shared server key." }, { status: 503 });
 
   const callbackBase = process.env.CALLBACK_BASE_URL;
   if (!callbackBase) return NextResponse.json({ error: "CALLBACK_BASE_URL is not set" }, { status: 500 });
@@ -553,7 +553,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (!res.ok) {
-      if (res.status === 401) throw new Error("The shared Kie.ai API key is invalid. Contact the administrator.");
+      if (res.status === 401) throw new Error("The active Kie.ai API key is invalid. Check your personal key or the shared server configuration.");
       throw new Error(await res.text());
     }
     const d = await res.json();

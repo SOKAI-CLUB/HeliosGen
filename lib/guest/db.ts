@@ -175,6 +175,12 @@ export function getKieApiToken(): string | null {
   return envToken;
 }
 
+export function getKieApiTokenSource(): "personal" | "shared" | null {
+  if (read().settings?.kie_api_token) return "personal";
+  const envToken = process.env.KIE_API_KEY?.trim() ?? "";
+  return envToken && envToken !== "your_kie_api_key_here" ? "shared" : null;
+}
+
 export function setKieApiToken(token: string): void {
   const db = read();
   db.settings = { ...db.settings, kie_api_token: token };

@@ -97,6 +97,7 @@ export function saveAzureTextModelName(name: string) {
 const IS_DEBUG = process.env.NEXT_PUBLIC_DEBUG === "true";
 
 type NavId = "api-keys" | "image-models" | "video-models" | "text-models" | "debug";
+type KieKeyStatus = "unknown" | "personal" | "shared" | "unset";
 
 const NAV_BASE: { id: NavId; label: string; icon: React.ReactNode }[] = [
   {
@@ -417,12 +418,11 @@ const INPUT_STYLE: React.CSSProperties = {
   width: "100%",
 };
 
-const KIE_MANAGED_BY_ADMIN = process.env.NEXT_PUBLIC_GUEST_MODE !== "true";
-
 function ApiKeysPanel({
   azureBaseUrl,
   onBaseUrlChange,
   kieKeyStatus,
+  kieSharedKeySet,
   onKieKeySave,
   onKieKeyDelete,
   azureKeyStatus,
@@ -433,7 +433,8 @@ function ApiKeysPanel({
 }: {
   azureBaseUrl: string;
   onBaseUrlChange: (v: string) => void;
-  kieKeyStatus: "unknown" | "set" | "unset";
+  kieKeyStatus: KieKeyStatus;
+  kieSharedKeySet: boolean | null;
   onKieKeySave: (token: string) => Promise<void>;
   onKieKeyDelete: () => Promise<void>;
   azureKeyStatus: "unknown" | "set" | "unset";
@@ -509,6 +510,18 @@ function ApiKeysPanel({
     }
   };
 
+  const handleKieDelete = async () => {
+    setKieSaving(true);
+    setKieError(null);
+    try {
+      await onKieKeyDelete();
+    } catch (e: unknown) {
+      setKieError(e instanceof Error ? e.message : "Failed to remove");
+    } finally {
+      setKieSaving(false);
+    }
+  };
+
   const handleAzureSave = async () => {
     if (!azureInput.trim()) return;
     setAzureSaving(true);
@@ -531,9 +544,7 @@ function ApiKeysPanel({
           API Keys
         </h2>
         <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.28)", marginTop: "6px", lineHeight: 1.5 }}>
-          {KIE_MANAGED_BY_ADMIN
-            ? "The shared Kie.ai key is managed on the server and is never exposed to users."
-            : "Your Kie.ai key is stored on the server and is never exposed to the browser."}
+          Add personal provider credentials when you want to use your own account. They are stored server-side and never exposed to the browser.
         </p>
       </div>
 
@@ -565,7 +576,7 @@ function ApiKeysPanel({
               Used for all image &amp; video generation
             </div>
           </div>
-          {kieKeyStatus === "set" && (
+          {(kieKeyStatus === "personal" || kieKeyStatus === "shared") && (
             <span
               style={{
                 marginLeft: "auto", fontSize: "10px", fontWeight: 600,
@@ -574,20 +585,12 @@ function ApiKeysPanel({
                 padding: "2px 7px", letterSpacing: "0.04em",
               }}
             >
-              {KIE_MANAGED_BY_ADMIN ? "SHARED" : "SAVED"}
+              {kieKeyStatus === "personal" ? "PERSONAL" : "SHARED"}
             </span>
           )}
         </div>
 
-        {KIE_MANAGED_BY_ADMIN ? (
-          <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.35)", margin: 0, lineHeight: 1.5 }}>
-            {kieKeyStatus === "unknown"
-              ? "Checking the shared server configuration…"
-              : kieKeyStatus === "set"
-              ? "Configured by the administrator and available to every account."
-              : "The administrator has not configured the shared Kie.ai key yet."}
-          </p>
-        ) : kieKeyStatus === "unknown" ? (
+        {kieKeyStatus === "unknown" ? (
           <div style={{ display: "flex", gap: "8px" }}>
             <div style={{
               flex: 1, height: "31px", borderRadius: "7px",
@@ -600,27 +603,44 @@ function ApiKeysPanel({
               animation: "skeleton-pulse 1.4s ease-in-out infinite 0.2s",
             }} />
           </div>
-        ) : kieKeyStatus === "set" ? (
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <input
-              type="password"
-              value="placeholdertoken"
-              readOnly
-              style={{ ...INPUT_STYLE, flex: 1, cursor: "default", color: "rgba(255,255,255,0.3)" }}
-            />
-            <button
-              onClick={onKieKeyDelete}
-              style={{
-                padding: "7px 12px", borderRadius: "7px", border: "1px solid rgba(239,68,68,0.3)",
-                background: "rgba(239,68,68,0.06)", color: "rgba(239,68,68,0.7)",
-                cursor: "pointer", fontSize: "12px", fontWeight: 500, whiteSpace: "nowrap",
-              }}
-            >
-              Remove
-            </button>
+        ) : kieKeyStatus === "personal" ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: "7px" }}>
+            <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.35)", margin: 0, lineHeight: 1.5 }}>
+              {kieSharedKeySet
+                ? "Your personal key takes priority over the shared key. Remove it to switch back to the shared account."
+                : "Your personal key is active. No shared fallback is currently configured on the server."}
+            </p>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <input
+                type="password"
+                value="placeholdertoken"
+                aria-label="Saved personal Kie.ai API token"
+                readOnly
+                style={{ ...INPUT_STYLE, flex: 1, cursor: "default", color: "rgba(255,255,255,0.3)" }}
+              />
+              <button
+                onClick={handleKieDelete}
+                disabled={kieSaving}
+                style={{
+                  padding: "7px 12px", borderRadius: "7px", border: "1px solid rgba(239,68,68,0.3)",
+                  background: "rgba(239,68,68,0.06)", color: "rgba(239,68,68,0.7)",
+                  cursor: kieSaving ? "default" : "pointer", fontSize: "12px", fontWeight: 500, whiteSpace: "nowrap",
+                }}
+              >
+                {kieSaving ? "Removing…" : kieSharedKeySet ? "Use shared key" : "Remove"}
+              </button>
+            </div>
+            {kieError && (
+              <p style={{ fontSize: "11px", color: "rgba(239,68,68,0.7)", margin: 0 }}>{kieError}</p>
+            )}
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+            <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.35)", margin: 0, lineHeight: 1.5 }}>
+              {kieKeyStatus === "shared"
+                ? "The shared key is active by default. Add your own key to use your personal Kie.ai balance instead."
+                : "No shared key is configured. Add your own key to enable Kie.ai generation."}
+            </p>
             <div style={{ display: "flex", gap: "8px" }}>
               <input
                 type="password"
@@ -1339,7 +1359,8 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
   const [azureBaseUrl, setAzureBaseUrl]               = useState("");
   const [azureTextDeployment, setAzureTextDeployment] = useState("auto-model");
   const [azureTextModelName, setAzureTextModelName]   = useState("model-router");
-  const [kieKeyStatus, setKieKeyStatus]               = useState<"unknown" | "set" | "unset">("unknown");
+  const [kieKeyStatus, setKieKeyStatus]               = useState<KieKeyStatus>("unknown");
+  const [kieSharedKeySet, setKieSharedKeySet]         = useState<boolean | null>(null);
   const [azureKeyStatus, setAzureKeyStatus]   = useState<"unknown" | "set" | "unset">("unknown");
   const [codexStatus, setCodexStatus]         = useState<CodexStatus>({ kind: "unknown" });
   const setKieKeySet    = useWorkflowStore((s) => s.setKieKeySet);
@@ -1373,7 +1394,12 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
     authHeader().then((h) =>
       fetch("/api/settings/kie-key", { headers: h })
         .then((r) => r.json())
-        .then((d) => setKieKeyStatus(d.hasToken ? "set" : "unset"))
+        .then((d) => {
+          setKieSharedKeySet(!!d.hasSharedToken);
+          setKieKeyStatus(
+            d.source === "personal" ? "personal" : d.source === "shared" ? "shared" : "unset"
+          );
+        })
         .catch(() => setKieKeyStatus("unset"))
     );
     // Check if Azure key is saved on the server
@@ -1426,15 +1452,18 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
       body: JSON.stringify({ kieApiToken: token }),
     });
     if (!res.ok) throw new Error((await res.json()).error ?? "Failed to save");
-    setKieKeyStatus("set");
+    setKieKeyStatus("personal");
     setKieKeySet(true);
   };
 
   const handleKieKeyDelete = async () => {
     const h = await authHeader();
-    await fetch("/api/settings/kie-key", { method: "DELETE", headers: h });
-    setKieKeyStatus("unset");
-    setKieKeySet(false);
+    const res = await fetch("/api/settings/kie-key", { method: "DELETE", headers: h });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error ?? "Failed to remove");
+    setKieSharedKeySet(!!data.hasSharedToken);
+    setKieKeyStatus(data.source === "shared" ? "shared" : "unset");
+    setKieKeySet(!!data.hasToken);
   };
 
   const handleAzureKeySave = async (key: string) => {
@@ -1654,6 +1683,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                 azureBaseUrl={azureBaseUrl}
                 onBaseUrlChange={handleBaseUrlChange}
                 kieKeyStatus={kieKeyStatus}
+                kieSharedKeySet={kieSharedKeySet}
                 onKieKeySave={handleKieKeySave}
                 onKieKeyDelete={handleKieKeyDelete}
                 azureKeyStatus={azureKeyStatus}

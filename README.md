@@ -69,9 +69,10 @@ No vendor lock-in.
 
 # 💳 Credits
 
-HeliosGen now works with <a href="https://kie.ai?ref=25abb3f2236cbff9780ab9c2f84479ec" target="_blank">kie.ai</a>.
+HeliosGen works with <a href="https://kie.ai?ref=25abb3f2236cbff9780ab9c2f84479ec" target="_blank">kie.ai</a>.
 
-All credits are purchased directly on your own account and never expire.
+Use the shared server key by default, or add your personal Kie.ai key in Settings
+to use the credits purchased directly on your own account.
 
 That means:
 - no monthly reset,
@@ -92,7 +93,7 @@ You only pay for what you generate.
 - Reference image support
 - Parallel & sequential pipeline execution
 - Shareable public workflows
-- Server-managed shared Kie.ai key
+- Shared Kie.ai key by default, with optional per-user keys
 - Real-time generation history
 - Self-hostable architecture
 - Modern responsive UI
@@ -181,7 +182,7 @@ npm run dev
 Requirements:
 - Supabase
 - Cloudflare R2
-- One shared Kie.ai API key
+- One shared Kie.ai API key (users can optionally bring their own)
 
 ### 3a. Database setup
 
@@ -204,8 +205,10 @@ Disable public registrations in **Supabase → Authentication → Sign In / Prov
 - turn off **Confirm email**.
 
 Create accounts yourself from **Authentication → Users → Add user**, with the
-email already confirmed. Every account then uses the same server-side Kie.ai key
-without seeing or entering it.
+email already confirmed. Every account uses the server-side Kie.ai key by
+default, without seeing it. A user can optionally save a personal Kie.ai key in
+**Settings → API Keys**; that key takes priority only for that user. Removing it
+immediately switches the account back to the shared key.
 
 ### 3c. Environment variables
 
