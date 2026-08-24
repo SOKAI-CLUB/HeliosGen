@@ -7,6 +7,7 @@ import { useWorkflowStore, NodeData } from "@/lib/store";
 import { VIDEO_MODELS } from "@/lib/modelConfig";
 import { createClient } from "@/lib/supabase/client";
 import { sha256Hex } from "@/lib/assetHash";
+import VideoTrimDialog from "./VideoTrimDialog";
 
 type VideoInputNodeType = Node<NodeData, "videoInputNode">;
 
@@ -82,24 +83,16 @@ export default function VideoInputNode({ id, data, selected }: NodeProps<VideoIn
   const [viewMode, setViewMode]                 = useState<"video" | "frame">("video");
   const [isPlaying, setIsPlaying]               = useState(false);
   const [videoDuration, setVideoDuration]       = useState(0);
-  const [localTrimStart, setLocalTrimStart]     = useState(0);
-  const [localTrimEnd, setLocalTrimEnd]         = useState(0);
+  const [trimMaxAllowed, setTrimMaxAllowed]     = useState<number | undefined>(undefined);
 
-  const videoDurationRef    = useRef(0);
-  const localTrimStartRef   = useRef(0);
-  const localTrimEndRef     = useRef(0);
-  const trimMaxAllowedRef   = useRef<number | undefined>(undefined);
-  const trimBarRef          = useRef<HTMLDivElement>(null);
+  const videoDurationRef = useRef(0);
+  const autoOpenedTrimUrlRef = useRef<string | undefined>(undefined);
 
-  const trimOpenRef           = useRef(false);
   const committedTrimStartRef = useRef<number | undefined>(undefined);
   const committedTrimEndRef   = useRef<number | undefined>(undefined);
-  trimOpenRef.current             = trimOpen;
   committedTrimStartRef.current   = data.trimStart as number | undefined;
   committedTrimEndRef.current     = data.trimEnd   as number | undefined;
   videoDurationRef.current        = videoDuration;
-  localTrimStartRef.current       = localTrimStart;
-  localTrimEndRef.current         = localTrimEnd;
 
   // ── Two-layer crossfade: base video keeps playing while new URL loads on top ─
   const videoUrl = data.videoUrl as string | undefined;
@@ -413,7 +406,19 @@ export default function VideoInputNode({ id, data, selected }: NodeProps<VideoIn
       const lookupRes = await fetch(`/api/lookup-asset?hash=${hash}`, { headers: authHeaders });
       const { cdnUrl: cached } = await lookupRes.json() as { cdnUrl: string | null };
       if (cached) {
-        updateNodeData(id, { videoUrl: cached, videoAspectRatio: undefined, capturedFrameUrl: undefined });
+        autoOpenedTrimUrlRef.current = undefined;
+        updateNodeData(id, {
+          videoUrl: cached,
+          videoAspectRatio: undefined,
+          capturedFrameUrl: undefined,
+          trimStart: undefined,
+          trimEnd: undefined,
+          trimmedVideoUrl: undefined,
+          trimmedVideoSourceUrl: undefined,
+          trimmedVideoStart: undefined,
+          trimmedVideoEnd: undefined,
+          trimReviewed: undefined,
+        });
         return;
       }
     } catch { /* fall through */ }
@@ -421,7 +426,19 @@ export default function VideoInputNode({ id, data, selected }: NodeProps<VideoIn
     if (localUrlRef.current) URL.revokeObjectURL(localUrlRef.current);
     const blobUrl = URL.createObjectURL(file);
     localUrlRef.current = blobUrl;
-    updateNodeData(id, { videoUrl: blobUrl, videoAspectRatio: undefined, capturedFrameUrl: undefined });
+    autoOpenedTrimUrlRef.current = undefined;
+    updateNodeData(id, {
+      videoUrl: blobUrl,
+      videoAspectRatio: undefined,
+      capturedFrameUrl: undefined,
+      trimStart: undefined,
+      trimEnd: undefined,
+      trimmedVideoUrl: undefined,
+      trimmedVideoSourceUrl: undefined,
+      trimmedVideoStart: undefined,
+      trimmedVideoEnd: undefined,
+      trimReviewed: undefined,
+    });
     setUploading(true);
 
     try {
@@ -456,7 +473,8 @@ export default function VideoInputNode({ id, data, selected }: NodeProps<VideoIn
   // Returns the strictest max-duration constraint imposed by any connected model, or undefined
   const getConnectedMaxDuration = useCallback((): number | undefined => {
     const outgoingEdges = edges.filter(
-      (e) => e.source === id && (e.targetHandle === "resource" || e.targetHandle === "videoRef")
+      (e) => e.source === id &&
+        (e.targetHandle === "resource" || e.targetHandle === "videoRef" || e.targetHandle === "referenceVideo")
     );
     let strictest: number | undefined;
     for (const edge of outgoingEdges) {
@@ -489,21 +507,16 @@ export default function VideoInputNode({ id, data, selected }: NodeProps<VideoIn
     }, 240);
   }, []);
 
-  const openTrim = useCallback(() => {
+  const openTrim = useCallback((forcedMaxDuration?: number) => {
     // Always read duration straight from the DOM — state may not be set yet
     const dur = videoRef.current?.duration || videoDurationRef.current || 0;
+    if (!dur) return;
     setVideoDuration(dur);
     videoDurationRef.current = dur;
 
-    const cap   = getConnectedMaxDuration();
+    const cap = forcedMaxDuration ?? getConnectedMaxDuration();
     const start = (data.trimStart as number | undefined) ?? 0;
-    const end   = (data.trimEnd   as number | undefined) ?? dur;
-    // Clamp end to cap if constraint exists
-    const clampedEnd = cap !== undefined ? Math.min(end || dur, start + cap) : (end || dur);
-
-    trimMaxAllowedRef.current = cap;
-    setLocalTrimStart(start);
-    setLocalTrimEnd(clampedEnd);
+    setTrimMaxAllowed(cap);
     setPickerOpen(false);
     setShowFramePreview(false);
     videoRef.current?.pause();
@@ -512,107 +525,47 @@ export default function VideoInputNode({ id, data, selected }: NodeProps<VideoIn
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.trimStart, data.trimEnd, getConnectedMaxDuration]);
 
-  const applyTrim = useCallback(() => {
-    updateNodeData(id, { trimStart: localTrimStartRef.current, trimEnd: localTrimEndRef.current });
-    trimMaxAllowedRef.current = undefined;
+  const applyTrim = useCallback((startTime: number, endTime: number) => {
+    const dur = videoDurationRef.current;
+    const isFullVideo = startTime <= 0.01 && endTime >= dur - 0.01;
+    updateNodeData(id, {
+      trimStart: isFullVideo ? undefined : startTime,
+      trimEnd: isFullVideo ? undefined : endTime,
+      trimmedVideoUrl: undefined,
+      trimmedVideoSourceUrl: undefined,
+      trimmedVideoStart: undefined,
+      trimmedVideoEnd: undefined,
+      trimReviewed: true,
+    });
+    setTrimMaxAllowed(undefined);
     setTrimOpen(false);
     if (videoRef.current) {
-      videoRef.current.currentTime = localTrimStartRef.current;
+      videoRef.current.currentTime = startTime;
       videoRef.current.play().catch(() => {});
     }
   }, [id, updateNodeData]);
 
-  const resetTrim = useCallback(() => {
-    updateNodeData(id, { trimStart: undefined, trimEnd: undefined });
-
-    const dur = videoDurationRef.current;
-    const cap = getConnectedMaxDuration();
-
-    if (cap !== undefined && dur > cap) {
-      // Video still exceeds the model limit — keep trimmer open with constraint
-      trimMaxAllowedRef.current = cap;
-      setLocalTrimStart(0);
-      setLocalTrimEnd(Math.min(dur, cap));
-      if (videoRef.current) videoRef.current.currentTime = 0;
-      // trimOpen stays true
-    } else {
-      trimMaxAllowedRef.current = undefined;
-      setTrimOpen(false);
-    }
-  }, [id, updateNodeData, getConnectedMaxDuration]);
-
   const cancelTrim = useCallback(() => {
-    trimMaxAllowedRef.current = undefined;
-    const cap = getConnectedMaxDuration();
+    const cap = trimMaxAllowed ?? getConnectedMaxDuration();
     const dur = videoDurationRef.current;
     // If video exceeds the connected model limit and no trim is committed, auto-apply [0, cap]
     if (cap !== undefined && dur > cap && committedTrimStartRef.current === undefined) {
-      updateNodeData(id, { trimStart: 0, trimEnd: cap });
+      updateNodeData(id, {
+        trimStart: 0,
+        trimEnd: cap,
+        trimmedVideoUrl: undefined,
+        trimmedVideoSourceUrl: undefined,
+        trimmedVideoStart: undefined,
+        trimmedVideoEnd: undefined,
+        trimReviewed: true,
+      });
+    } else {
+      updateNodeData(id, { trimReviewed: true });
     }
+    setTrimMaxAllowed(undefined);
     setTrimOpen(false);
     videoRef.current?.play().catch(() => {});
-  }, [id, updateNodeData, getConnectedMaxDuration]);
-
-  const startHandleDrag = useCallback((e: React.PointerEvent, which: "start" | "end") => {
-    e.preventDefault();
-    e.stopPropagation();
-    const bar = trimBarRef.current;
-    if (!bar) return;
-
-    const MIN_DURATION = 3;
-    const onMove = (ev: PointerEvent) => {
-      const rect   = bar.getBoundingClientRect();
-      const pct    = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
-      const time   = pct * videoDurationRef.current;
-      const maxSel = trimMaxAllowedRef.current;
-      if (which === "start") {
-        let clamped = Math.max(0, Math.min(time, localTrimEndRef.current - MIN_DURATION));
-        if (maxSel !== undefined) clamped = Math.max(clamped, localTrimEndRef.current - maxSel);
-        setLocalTrimStart(clamped);
-        if (videoRef.current) videoRef.current.currentTime = clamped;
-      } else {
-        let clamped = Math.min(videoDurationRef.current, Math.max(time, localTrimStartRef.current + MIN_DURATION));
-        if (maxSel !== undefined) clamped = Math.min(clamped, localTrimStartRef.current + maxSel);
-        setLocalTrimEnd(clamped);
-        if (videoRef.current) videoRef.current.currentTime = clamped;
-      }
-    };
-    const onUp = () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-  }, []);
-
-  const startSelectionDrag = useCallback((e: React.PointerEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const bar = trimBarRef.current;
-    if (!bar) return;
-
-    const startX   = e.clientX;
-    const barWidth = bar.getBoundingClientRect().width;
-    const initStart = localTrimStartRef.current;
-    const initEnd   = localTrimEndRef.current;
-    const duration  = initEnd - initStart;
-
-    const onMove = (ev: PointerEvent) => {
-      const dx      = ev.clientX - startX;
-      const dtSec   = (dx / barWidth) * videoDurationRef.current;
-      const newStart = Math.max(0, Math.min(initStart + dtSec, videoDurationRef.current - duration));
-      const newEnd   = newStart + duration;
-      setLocalTrimStart(newStart);
-      setLocalTrimEnd(newEnd);
-      if (videoRef.current) videoRef.current.currentTime = newStart;
-    };
-    const onUp = () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-  }, []);
+  }, [getConnectedMaxDuration, id, trimMaxAllowed, updateNodeData]);
 
   useEffect(() => {
     const lbl = data.label as string | undefined;
@@ -621,32 +574,30 @@ export default function VideoInputNode({ id, data, selected }: NodeProps<VideoIn
   }, []);
 
   useEffect(() => {
-    if (pickerOpen || viewMode === "frame") videoRef.current?.pause();
+    if (pickerOpen || trimOpen || viewMode === "frame") videoRef.current?.pause();
     else videoRef.current?.play().catch(() => {});
-  }, [pickerOpen, viewMode]);
+  }, [pickerOpen, trimOpen, viewMode]);
 
   // Auto-open trimmer when a connected model requires a shorter video
   useEffect(() => {
     const maxDur = data.triggerTrimMaxDuration as number | undefined;
     if (!maxDur) return;
-    // Clear the flag immediately so it doesn't fire again
-    updateNodeData(id, { triggerTrimMaxDuration: undefined });
 
     const dur = videoRef.current?.duration || videoDurationRef.current || 0;
     if (!dur) return;
 
-    trimMaxAllowedRef.current = maxDur;
-    setVideoDuration(dur);
-    videoDurationRef.current = dur;
-    setLocalTrimStart(0);
-    setLocalTrimEnd(Math.min(dur, maxDur));
-    setPickerOpen(false);
-    setShowFramePreview(false);
-    videoRef.current?.pause();
-    if (videoRef.current) videoRef.current.currentTime = 0;
-    setTrimOpen(true);
+    // Clear only once metadata is ready, otherwise the upload path would lose the request.
+    updateNodeData(id, { triggerTrimMaxDuration: undefined });
+    autoOpenedTrimUrlRef.current = "opened";
+    openTrim(maxDur);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.triggerTrimMaxDuration]);
+  }, [data.triggerTrimMaxDuration, videoDuration]);
+
+  const connectedToSeedanceEdit = edges.some((edge) => {
+    if (edge.source !== id || edge.targetHandle !== "referenceVideo") return false;
+    const target = nodes.find((node) => node.id === edge.target);
+    return target?.type === "videoGeneratorNode" && target.data.videoModel === "seedance-2-5-edit";
+  });
 
 
   const hasError    = data.hasError as boolean | undefined;
@@ -737,6 +688,14 @@ export default function VideoInputNode({ id, data, selected }: NodeProps<VideoIn
               // Seek to trim start so autoPlay begins within the selection
               const tStart = committedTrimStartRef.current;
               if (tStart !== undefined && tStart > 0) v.currentTime = tStart;
+              if (
+                connectedToSeedanceEdit &&
+                !data.trimReviewed &&
+                autoOpenedTrimUrlRef.current === undefined
+              ) {
+                autoOpenedTrimUrlRef.current = "opened";
+                requestAnimationFrame(() => openTrim(30));
+              }
             }}
             onTimeUpdate={(e) => {
               const v = e.currentTarget;
@@ -745,12 +704,12 @@ export default function VideoInputNode({ id, data, selected }: NodeProps<VideoIn
                 const pct = v.currentTime / v.duration;
                 setProgress(pct);
                 if (pickerOpen) setScrubPos(pct);
-                // Loop within trim range (live refs in trim mode, committed refs otherwise)
-                const tEnd   = trimOpenRef.current ? localTrimEndRef.current   : committedTrimEndRef.current;
-                const tStart = trimOpenRef.current ? localTrimStartRef.current : committedTrimStartRef.current;
+                // Loop within the committed trim range in the compact node player.
+                const tEnd   = committedTrimEndRef.current;
+                const tStart = committedTrimStartRef.current;
                 if (tEnd !== undefined && v.currentTime >= tEnd) {
                   v.currentTime = tStart ?? 0;
-                } else if (!trimOpenRef.current && tStart !== undefined && v.currentTime < tStart) {
+                } else if (tStart !== undefined && v.currentTime < tStart) {
                   // Jumped behind trim start (e.g. seek via progress bar) — snap forward
                   v.currentTime = tStart;
                 }
@@ -1021,109 +980,17 @@ export default function VideoInputNode({ id, data, selected }: NodeProps<VideoIn
             </>
           )}
 
-          {/* ── Trim overlay — bottom strip ───────────────────────────── */}
           {trimOpen && (
-            <div
-              className="nodrag absolute bottom-0 left-0 right-0 z-20 px-2.5 pb-2.5 pt-1.5 flex flex-col gap-1.5"
-              style={{ background: "linear-gradient(transparent, rgba(0,0,0,0.75) 30%)" }}
-              onMouseDown={(e) => e.stopPropagation()}
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Row: play button + trim bar */}
-              <div className="flex items-center gap-2">
-                <button
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const v = videoRef.current;
-                    if (!v) return;
-                    if (v.paused) v.play().catch(() => {}); else v.pause();
-                  }}
-                  className="nodrag w-6 h-6 flex items-center justify-center shrink-0 text-white/80 hover:text-white"
-                >
-                  {isPlaying ? (
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
-                      <rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" />
-                    </svg>
-                  ) : (
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
-                      <polygon points="5 3 19 12 5 21 5 3" />
-                    </svg>
-                  )}
-                </button>
-
-                <div
-                  ref={trimBarRef}
-                  className="relative flex-1 h-5 rounded-sm overflow-visible"
-                  style={{ background: "rgba(255,255,255,0.12)" }}
-                >
-                  {videoDuration > 0 && (
-                    <>
-                      {/* Amber border — draggable middle */}
-                      <div
-                        className="absolute inset-y-0 rounded-sm cursor-grab active:cursor-grabbing touch-none select-none"
-                        style={{
-                          left:   `${(localTrimStart / videoDuration) * 100}%`,
-                          right:  `${100 - (localTrimEnd / videoDuration) * 100}%`,
-                          border: "1.5px solid #FBBF24",
-                        }}
-                        onPointerDown={startSelectionDrag}
-                      />
-
-                      {/* Left handle (invisible hit area) */}
-                      <div
-                        className="absolute top-0 bottom-0 cursor-ew-resize touch-none select-none z-10"
-                        style={{ left: `${(localTrimStart / videoDuration) * 100}%`, transform: "translateX(-50%)", width: 14 }}
-                        onPointerDown={(e) => startHandleDrag(e, "start")}
-                      />
-
-                      {/* Right handle (invisible hit area) */}
-                      <div
-                        className="absolute top-0 bottom-0 cursor-ew-resize touch-none select-none z-10"
-                        style={{ left: `${(localTrimEnd / videoDuration) * 100}%`, transform: "translateX(-50%)", width: 14 }}
-                        onPointerDown={(e) => startHandleDrag(e, "end")}
-                      />
-
-                      {/* Playhead */}
-                      <div
-                        className="absolute top-0 bottom-0 w-[1.5px] bg-white pointer-events-none"
-                        style={{ left: `${(currentSec / videoDuration) * 100}%` }}
-                      />
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {/* Row: times + action buttons */}
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] text-amber-400 font-mono">{fmtTime(localTrimStart)} – {fmtTime(localTrimEnd)}</span>
-                <div className="flex gap-1.5">
-                  {data.trimStart !== undefined && (
-                    <button
-                      onMouseDown={(e) => e.stopPropagation()}
-                      onPointerDown={(e) => e.stopPropagation()}
-                      onClick={(e) => { e.stopPropagation(); resetTrim(); }}
-                      className="nodrag h-5 px-2 rounded-full bg-white/10 text-white text-[10px] flex items-center cursor-pointer"
-                    >Reset</button>
-                  )}
-                  <button
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={(e) => { e.stopPropagation(); cancelTrim(); }}
-                    className="nodrag h-5 px-2 rounded-full bg-white/10 text-white text-[10px] flex items-center cursor-pointer"
-                  >Cancel</button>
-                  <button
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={(e) => { e.stopPropagation(); applyTrim(); }}
-                    className="nodrag h-5 px-2 rounded-full text-black text-[10px] font-semibold flex items-center cursor-pointer"
-                    style={{ background: "#FBBF24" }}
-                  >Apply</button>
-                </div>
-              </div>
-            </div>
+            <VideoTrimDialog
+              duration={videoDuration}
+              initialEnd={data.trimEnd as number | undefined}
+              initialStart={data.trimStart as number | undefined}
+              maxDuration={trimMaxAllowed}
+              open
+              videoUrl={baseVideoUrl}
+              onApply={applyTrim}
+              onCancel={cancelTrim}
+            />
           )}
 
           {/* ── Captured frame preview ───────────────────────────────── */}

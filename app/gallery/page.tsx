@@ -7,7 +7,7 @@ import { IMAGE_MODELS, VIDEO_MODELS, AZURE_POPULAR_SIZES, validateAzureCustomSiz
 import { PROVIDERS, getModelProvider, setModelProvider, modelHasProviderChoice } from "@/lib/providers";
 import { useWorkflowStore } from "@/lib/store";
 import type { User } from "@supabase/supabase-js";
-import { Maximize2, Minimize2, ShieldAlert, X } from "lucide-react";
+import { Maximize2, Minimize2, Scissors, ShieldAlert, X } from "lucide-react";
 import { GalleryItem, getToken, galleryCache } from "@/lib/galleryUtils";
 import { useFolderStore } from "@/lib/folderStore";
 import { MediaPickerModal } from "@/components/MediaPickerModal";
@@ -17,6 +17,7 @@ import DotCanvasBackground from "@/components/ui/DotCanvasBackground";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { Button } from "@/components/ui/button";
 import { browserNotify, requestNotificationPermission } from "@/lib/browserNotify";
+import VideoTrimDialog from "@/components/nodes/VideoTrimDialog";
 
 const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
@@ -420,6 +421,13 @@ interface RefImage {
   cdnUrl: string | null;
   uploading: boolean;
   error: boolean;
+  videoDuration?: number;
+  trimStart?: number;
+  trimEnd?: number;
+  trimmedVideoUrl?: string;
+  trimmedVideoSourceUrl?: string;
+  trimmedVideoStart?: number;
+  trimmedVideoEnd?: number;
 }
 
 interface PendingGen {
@@ -670,9 +678,42 @@ interface SavedSettings {
   vidResourceUrls?: string[];
   vidVideoRefUrl?: string | null;
   vidRefVideoUrls?: string[];
+  vidRefVideoItems?: Array<{
+    url: string;
+    videoDuration?: number;
+    trimStart?: number;
+    trimEnd?: number;
+    trimmedVideoUrl?: string;
+    trimmedVideoSourceUrl?: string;
+    trimmedVideoStart?: number;
+    trimmedVideoEnd?: number;
+  }>;
   vidRefAudioUrls?: string[];
   vidElements?: KlingElement[];
   taggedImages?: TaggedImage[];
+}
+
+function restoreSavedVideoRefs(settings: Partial<SavedSettings> | null): RefImage[] {
+  if (settings?.vidRefVideoItems?.length) {
+    return settings.vidRefVideoItems.map((item) => {
+      const { url, ...trimData } = item;
+      return {
+        id: url,
+        objectUrl: url,
+        cdnUrl: url,
+        uploading: false,
+        error: false,
+        ...trimData,
+      };
+    });
+  }
+  return (settings?.vidRefVideoUrls ?? []).map((url) => ({
+    id: url,
+    objectUrl: url,
+    cdnUrl: url,
+    uploading: false,
+    error: false,
+  }));
 }
 
 function settingsKey(tab: Tab, folderId: string | null): string {
@@ -1222,9 +1263,11 @@ function GalleryInner() {
   const [vidEndFrame, setVidEndFrame]     = useState<RefImage | null>(() => { const u = loadSettings(tab, selectedFolderId)?.vidEndFrameUrl;   return u ? urlToRef(u) : null; });
   const [vidResources, setVidResources]   = useState<RefImage[]>(() => (loadSettings(tab, selectedFolderId)?.vidResourceUrls ?? []).map(urlToRef));
   const [vidVideoRef, setVidVideoRef]     = useState<RefImage | null>(() => { const u = loadSettings(tab, selectedFolderId)?.vidVideoRefUrl;   return u ? urlToRef(u) : null; });
-  const [vidRefVideos, setVidRefVideos]   = useState<RefImage[]>(() => (loadSettings(tab, selectedFolderId)?.vidRefVideoUrls ?? []).map(urlToRef));
+  const [vidRefVideos, setVidRefVideos]   = useState<RefImage[]>(() => restoreSavedVideoRefs(loadSettings(tab, selectedFolderId)));
   const [vidRefAudios, setVidRefAudios]   = useState<RefImage[]>(() => (loadSettings(tab, selectedFolderId)?.vidRefAudioUrls ?? []).map(urlToRef));
   const [vidElements, setVidElements]     = useState<KlingElement[]>(() => loadSettings(tab, selectedFolderId)?.vidElements ?? []);
+  const [videoTrimTarget, setVideoTrimTarget] = useState<RefImage | null>(null);
+  const galleryTrimPromiseCacheRef = useRef<Map<string, Promise<string>>>(new Map());
   const [elementPickerOpen, setElementPickerOpen] = useState(false);
   const vidImgInputRef   = useRef<HTMLInputElement>(null);
   const vidVideoInputRef = useRef<HTMLInputElement>(null);
@@ -1524,7 +1567,7 @@ function GalleryInner() {
     setVidEndFrame(saved?.vidEndFrameUrl ? toRef(saved.vidEndFrameUrl) : null);
     setVidResources((saved?.vidResourceUrls ?? []).map(toRef));
     setVidVideoRef(saved?.vidVideoRefUrl ? toRef(saved.vidVideoRefUrl) : null);
-    setVidRefVideos((saved?.vidRefVideoUrls ?? []).map(toRef));
+    setVidRefVideos(restoreSavedVideoRefs(saved));
     setVidRefAudios((saved?.vidRefAudioUrls ?? []).map(toRef));
     setVidElements(saved?.vidElements ?? []);
     const restoredPrompt = resolvedPrompt;
@@ -1659,6 +1702,16 @@ function GalleryInner() {
       vidResourceUrls: vidResources.filter(readyCdnUrl).map(r => r.cdnUrl!),
       vidVideoRefUrl: vidVideoRef?.cdnUrl ?? null,
       vidRefVideoUrls: vidRefVideos.filter(readyCdnUrl).map(r => r.cdnUrl!),
+      vidRefVideoItems: vidRefVideos.filter(readyCdnUrl).map((r) => ({
+        url: r.cdnUrl!,
+        videoDuration: r.videoDuration,
+        trimStart: r.trimStart,
+        trimEnd: r.trimEnd,
+        trimmedVideoUrl: r.trimmedVideoUrl,
+        trimmedVideoSourceUrl: r.trimmedVideoSourceUrl,
+        trimmedVideoStart: r.trimmedVideoStart,
+        trimmedVideoEnd: r.trimmedVideoEnd,
+      })),
       vidRefAudioUrls: vidRefAudios.filter(readyCdnUrl).map(r => r.cdnUrl!),
       vidElements,
       taggedImages,
@@ -1710,7 +1763,7 @@ function GalleryInner() {
     setVidEndFrame(saved?.vidEndFrameUrl ? toRef(saved.vidEndFrameUrl) : null);
     setVidResources((saved?.vidResourceUrls ?? []).map(toRef));
     setVidVideoRef(saved?.vidVideoRefUrl ? toRef(saved.vidVideoRefUrl) : null);
-    setVidRefVideos((saved?.vidRefVideoUrls ?? []).map(toRef));
+    setVidRefVideos(restoreSavedVideoRefs(saved));
     setVidRefAudios((saved?.vidRefAudioUrls ?? []).map(toRef));
     setVidElements(saved?.vidElements ?? []);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1894,6 +1947,10 @@ function GalleryInner() {
       }
     }
 
+    if (modelId === "seedance-2-5-edit" && target === "referenceVideo" && newEntries[0]) {
+      setVideoTrimTarget(newEntries[0]);
+    }
+
     const token = await getToken();
     await Promise.all(toAdd.map(async (file, i) => {
       const entry = newEntries[i];
@@ -1987,7 +2044,9 @@ function GalleryInner() {
     if (target === "referenceVideo") {
       if (isDup(vidRefVideos)) return;
       if (isSeedancePicker) { setVidStartFrame(null); setVidEndFrame(null); }
-      setVidRefVideos(prev => [...prev, { id: randomUUID(), objectUrl: url, cdnUrl: url, uploading: false, error: false }]);
+      const entry: RefImage = { id: randomUUID(), objectUrl: url, cdnUrl: url, uploading: false, error: false };
+      setVidRefVideos(prev => [...prev, entry]);
+      if (modelId === "seedance-2-5-edit") setVideoTrimTarget(entry);
       return;
     }
     const entry: RefImage = { id: randomUUID(), objectUrl: url, cdnUrl: url, uploading: false, error: false };
@@ -2034,6 +2093,36 @@ function GalleryInner() {
       if (pickerUploadKind === "image") vidImgInputRef.current?.click();
       else vidVideoInputRef.current?.click();
     }
+  };
+
+  const applyGalleryVideoTrim = (startTime: number, endTime: number, videoDuration: number) => {
+    if (!videoTrimTarget) return;
+    const targetId = videoTrimTarget.id;
+    const isFullVideo = startTime <= 0.01 && endTime >= videoDuration - 0.01;
+    setVidRefVideos((previous) => previous.map((reference) => reference.id === targetId ? {
+      ...reference,
+      videoDuration,
+      trimStart: isFullVideo ? undefined : startTime,
+      trimEnd: isFullVideo ? undefined : endTime,
+      trimmedVideoUrl: undefined,
+      trimmedVideoSourceUrl: undefined,
+      trimmedVideoStart: undefined,
+      trimmedVideoEnd: undefined,
+    } : reference));
+    setVideoTrimTarget(null);
+  };
+
+  const cancelGalleryVideoTrim = (videoDuration: number) => {
+    if (!videoTrimTarget) return;
+    const targetId = videoTrimTarget.id;
+    setVidRefVideos((previous) => previous.map((reference) => reference.id === targetId ? {
+      ...reference,
+      videoDuration,
+      ...(videoDuration > 30 && reference.trimStart === undefined
+        ? { trimStart: 0, trimEnd: 30 }
+        : {}),
+    } : reference));
+    setVideoTrimTarget(null);
   };
 
   // ── Generate ──────────────────────────────────────────────────────────────
@@ -2111,9 +2200,60 @@ function GalleryInner() {
         ? [...mentionElements, ...baseElements]
         : undefined;
 
-      const baseVideoUrls = handles.includes("referenceVideo")
-        ? vidRefVideos.filter(r => r.cdnUrl && !r.error && !extraVideoSet.has(r.cdnUrl!)).map(r => r.cdnUrl!)
+      const prepareVideoPassage = async (reference: RefImage) => {
+        const sourceUrl = reference.cdnUrl!;
+        if (reference.trimStart === undefined || reference.trimEnd === undefined) return sourceUrl;
+        if (
+          reference.trimmedVideoUrl &&
+          reference.trimmedVideoSourceUrl === sourceUrl &&
+          reference.trimmedVideoStart === reference.trimStart &&
+          reference.trimmedVideoEnd === reference.trimEnd
+        ) {
+          return reference.trimmedVideoUrl;
+        }
+
+        const cacheKey = `${sourceUrl}:${reference.trimStart}:${reference.trimEnd}`;
+        let trimPromise = galleryTrimPromiseCacheRef.current.get(cacheKey);
+        if (!trimPromise) {
+          trimPromise = (async () => {
+            const trimResponse = await fetch("/api/trim-video", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+              body: JSON.stringify({
+                videoUrl: sourceUrl,
+                startTime: reference.trimStart,
+                endTime: reference.trimEnd,
+              }),
+            });
+            const trimResult = await trimResponse.json() as { cdnUrl?: string; error?: string };
+            if (!trimResponse.ok || !trimResult.cdnUrl) {
+              throw new Error(trimResult.error ?? "The selected video passage could not be prepared.");
+            }
+            return trimResult.cdnUrl;
+          })();
+          galleryTrimPromiseCacheRef.current.set(cacheKey, trimPromise);
+        }
+
+        try {
+          const trimmedUrl = await trimPromise;
+          setVidRefVideos((previous) => previous.map((item) => item.id === reference.id ? {
+            ...item,
+            trimmedVideoUrl: trimmedUrl,
+            trimmedVideoSourceUrl: sourceUrl,
+            trimmedVideoStart: reference.trimStart,
+            trimmedVideoEnd: reference.trimEnd,
+          } : item));
+          return trimmedUrl;
+        } catch (error) {
+          galleryTrimPromiseCacheRef.current.delete(cacheKey);
+          throw error;
+        }
+      };
+
+      const baseVideoRefs = handles.includes("referenceVideo")
+        ? vidRefVideos.filter(r => r.cdnUrl && !r.error && !extraVideoSet.has(r.cdnUrl!))
         : [];
+      const baseVideoUrls = await Promise.all(baseVideoRefs.map(prepareVideoPassage));
       const referenceVideoUrls = handles.includes("referenceVideo") && (taggedVideoUrls.length > 0 || baseVideoUrls.length > 0)
         ? [...taggedVideoUrls, ...baseVideoUrls]
         : undefined;
@@ -2662,6 +2802,7 @@ function GalleryInner() {
     } else if (target === "referenceVideo") {
       if (modelId === "seedance-2" || modelId === "seedance-2-fast") { setVidStartFrame(null); setVidEndFrame(null); }
       setVidRefVideos(prev => [...prev, entry]);
+      if (modelId === "seedance-2-5-edit") setVideoTrimTarget(entry);
     }
   }, [handleAddReference, modelId]);
 
@@ -3440,6 +3581,19 @@ function GalleryInner() {
         }} />
       )}
 
+      {videoTrimTarget && (
+        <VideoTrimDialog
+          duration={videoTrimTarget.videoDuration ?? 0}
+          initialEnd={videoTrimTarget.trimEnd}
+          initialStart={videoTrimTarget.trimStart}
+          maxDuration={30}
+          open
+          videoUrl={videoTrimTarget.objectUrl || videoTrimTarget.cdnUrl || ""}
+          onApply={applyGalleryVideoTrim}
+          onCancel={cancelGalleryVideoTrim}
+        />
+      )}
+
       {/* ── Hidden file input ── */}
       <input
         ref={fileInputRef}
@@ -3952,9 +4106,9 @@ function GalleryInner() {
                         <div key={r.id} onMouseDown={e => e.preventDefault()} onPointerDown={e => { if (!isMultiTarget || listForSlot.length <= 1 || r.uploading || r.error) return; _reorderDragItem = { id: r.id, listTarget: slot.target as "resource"|"referenceVideo"|"audioRef" }; _reorderOverId = null; setDraggingId(r.id); }} onPointerEnter={() => { if (!_reorderDragItem || _reorderDragItem.id === r.id || _reorderDragItem.listTarget !== slot.target) return; _reorderOverId = r.id; setReorderOverId(r.id); }} onPointerUp={e => { const info = _reorderDragItem; if (!info || info.listTarget !== slot.target) return; e.stopPropagation(); if (_reorderOverId) e.preventDefault(); const target = _reorderOverId ?? r.id; handleReorderDrop(target, slot.target as "resource"|"referenceVideo"|"audioRef"); }} onMouseEnter={() => { if (!draggingId) setHoveredRefId(hovId); }} onMouseLeave={() => setHoveredRefId(null)} onDragOver={e => { if (slot.mediaKind === "audio" || !e.dataTransfer.types.includes("application/x-gallery-item")) return; e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = "copy"; setDragOverSlotKey(dragKey); }} onDragLeave={() => setDragOverSlotKey(null)} onDrop={e => { if (slot.mediaKind !== "audio") handleGalleryItemDrop(e, slot.target as any, slot.mediaKind as "image" | "video"); }} style={{ position: "relative", width: "64px", height: "64px", borderRadius: "8px", overflow: "hidden", flexShrink: 0, background: "#1a1c1f", touchAction: (isMultiTarget && listForSlot.length > 1) ? "none" : undefined, transition: "border 120ms, box-shadow 120ms, opacity 120ms", border: r.error ? "1px solid rgba(248,113,113,0.4)" : dragOverSlotKey === dragKey ? "2.5px solid #2DD4BF" : taggedImages.some(t => t.refId === r.id) ? "2.5px solid #10b981" : "1px solid rgba(255,255,255,0.12)", boxShadow: dragOverSlotKey === dragKey ? "0 0 0 3px rgba(45,212,191,0.25)" : undefined, opacity: isSlotDragging ? 0.3 : undefined, cursor: (isMultiTarget && listForSlot.length > 1 && !r.uploading && !r.error) ? (draggingId === r.id ? "grabbing" : "grab") : undefined }}>
                           {slot.mediaKind === "image" ? <img src={thumbSrc(r.objectUrl, snapWidth(64))} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} /> : slot.mediaKind === "video" ? <video src={r.objectUrl} autoPlay muted loop playsInline style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(255,255,255,0.04)" }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>}
                           {hoveredRefId === hovId && !r.uploading && !r.error && slot.mediaKind !== "audio" && (
-                            <div onClick={() => { if (_reorderJustDropped || draggingId) { _reorderJustDropped = false; return; } setRefPreview({ url: r.objectUrl, mediaKind: slot.mediaKind }); }} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.35)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "zoom-in", zIndex: 1 }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg></div>
+                            <div onClick={() => { if (_reorderJustDropped || draggingId) { _reorderJustDropped = false; return; } if (modelId === "seedance-2-5-edit" && slot.target === "referenceVideo") setVideoTrimTarget(r); else setRefPreview({ url: r.objectUrl, mediaKind: slot.mediaKind }); }} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.35)", display: "flex", alignItems: "center", justifyContent: "center", cursor: modelId === "seedance-2-5-edit" && slot.target === "referenceVideo" ? "pointer" : "zoom-in", zIndex: 1 }}>{modelId === "seedance-2-5-edit" && slot.target === "referenceVideo" ? <Scissors size={15} /> : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>}</div>
                           )}
-                          <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "8px 4px 3px", background: "linear-gradient(to top, rgba(0,0,0,0.8) 0%, transparent 100%)", textAlign: "center" }}><span style={{ fontSize: "8px", fontWeight: 700, letterSpacing: "0.04em", color: "rgba(255,255,255,0.85)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block", padding: "0 4px" }}>{slot.label.toUpperCase()}</span></div>
+                          <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "8px 4px 3px", background: "linear-gradient(to top, rgba(0,0,0,0.8) 0%, transparent 100%)", textAlign: "center" }}><span style={{ fontSize: "8px", fontWeight: 700, letterSpacing: "0.04em", color: "rgba(255,255,255,0.85)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block", padding: "0 4px" }}>{r.trimStart !== undefined && r.trimEnd !== undefined ? `${(r.trimEnd - r.trimStart).toFixed(1)}S CLIP` : slot.label.toUpperCase()}</span></div>
                           <button onClick={() => removeVidRef(r.id, slot.target)} style={{ position: "absolute", top: "3px", right: "3px", width: "16px", height: "16px", borderRadius: "50%", background: "rgba(0,0,0,0.7)", border: "1px solid rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.85)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, transition: "background 120ms", zIndex: 2 }}><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
                         </div>
                         );

@@ -898,7 +898,7 @@ export default function WorkflowCanvas() {
     }
 
     const h = connection.targetHandle;
-    if (h !== "resource" && h !== "videoRef") return;
+    if (h !== "resource" && h !== "videoRef" && h !== "referenceVideo") return;
 
     const sourceNode = nodes.find((n) => n.id === connection.source);
     const targetNode = nodes.find((n) => n.id === connection.target);
@@ -909,11 +909,18 @@ export default function WorkflowCanvas() {
     const cfg = VIDEO_MODELS.find((m) => m.id === videoModelId);
     if (!cfg) return;
 
-    // Pick the right cap: videoRef uses videoRefMaxDuration, resource uses durationMax
+    // Pick the right cap: videoRef uses videoRefMaxDuration, multimodal references use durationMax.
     const maxDuration = h === "videoRef"
       ? cfg.apiInput.videoRefMaxDuration
       : cfg.apiInput.durationMax > 0 ? cfg.apiInput.durationMax : undefined;
     if (!maxDuration) return;
+
+    // Editing starts with choosing the exact source passage, even when the upload is
+    // already shorter than the model limit.
+    if (videoModelId === "seedance-2-5-edit" && h === "referenceVideo") {
+      updateNodeData(connection.source, { triggerTrimMaxDuration: maxDuration });
+      return;
+    }
 
     const videoDuration = sourceNode.data?.videoDuration as number | undefined;
     if (!videoDuration) return;

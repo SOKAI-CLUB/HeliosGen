@@ -51,6 +51,15 @@ export interface NodeData extends Record<string, unknown> {
   azureCustomHeight?: number;
   // video output
   videoUrl?: string;
+  videoDuration?: number;
+  trimStart?: number;
+  trimEnd?: number;
+  trimReviewed?: boolean;
+  triggerTrimMaxDuration?: number;
+  trimmedVideoUrl?: string;
+  trimmedVideoSourceUrl?: string;
+  trimmedVideoStart?: number;
+  trimmedVideoEnd?: number;
   // video model
   videoModel?: string;
   // kling 3.0 settings

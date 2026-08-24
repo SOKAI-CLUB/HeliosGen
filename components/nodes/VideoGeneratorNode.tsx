@@ -935,31 +935,75 @@ export default function VideoGeneratorNode({ id, data, selected }: NodeProps<Vid
       }
     }
 
-    // Trim videoRef if the source node has trim points applied
-    let finalVideoRefUrl = upstream.videoRefUrl;
-    if (finalVideoRefUrl) {
-      const videoRefEdge = edges.find((e) => e.target === id && e.targetHandle === "videoRef");
-      if (videoRefEdge) {
-        const videoSrcNode = nodes.find((n) => n.id === videoRefEdge.source);
-        const tStart = videoSrcNode?.data.trimStart as number | undefined;
-        const tEnd = videoSrcNode?.data.trimEnd as number | undefined;
-        if (tStart !== undefined && tEnd !== undefined) {
-          try {
-            const trimHeaders: Record<string, string> = { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` };
-            const trimRes = await fetch("/api/trim-video", {
-              method: "POST",
-              headers: trimHeaders,
-              body: JSON.stringify({ videoUrl: finalVideoRefUrl, startTime: tStart, endTime: tEnd }),
-            });
-            if (trimRes.ok) {
-              const trimJson = await trimRes.json();
-              if (trimJson.cdnUrl) finalVideoRefUrl = trimJson.cdnUrl;
-            }
-          } catch {
-            // trim failed — proceed with original URL
-          }
-        }
+    // Materialize every selected passage before generation. Seedance Edit uses the
+    // multi-reference handle, so forwarding its original URL would ignore the trim.
+    const trimHeaders: Record<string, string> = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    };
+    const trimReference = async (sourceNode: Node<NodeData> | undefined, sourceUrl: string) => {
+      const tStart = sourceNode?.data.trimStart as number | undefined;
+      const tEnd = sourceNode?.data.trimEnd as number | undefined;
+      if (tStart === undefined || tEnd === undefined) return sourceUrl;
+
+      const cachedUrl = sourceNode?.data.trimmedVideoUrl as string | undefined;
+      const cachedSourceUrl = sourceNode?.data.trimmedVideoSourceUrl as string | undefined;
+      const cachedStart = sourceNode?.data.trimmedVideoStart as number | undefined;
+      const cachedEnd = sourceNode?.data.trimmedVideoEnd as number | undefined;
+      if (
+        cachedUrl &&
+        cachedSourceUrl === sourceUrl &&
+        cachedStart === tStart &&
+        cachedEnd === tEnd
+      ) {
+        return cachedUrl;
       }
+
+      const trimRes = await fetch("/api/trim-video", {
+        method: "POST",
+        headers: trimHeaders,
+        body: JSON.stringify({ videoUrl: sourceUrl, startTime: tStart, endTime: tEnd }),
+      });
+      const trimJson = await trimRes.json() as { cdnUrl?: string; error?: string };
+      if (!trimRes.ok || !trimJson.cdnUrl) {
+        throw new Error(trimJson.error ?? "The selected video passage could not be prepared.");
+      }
+
+      if (sourceNode) {
+        updateNodeData(sourceNode.id, {
+          trimmedVideoUrl: trimJson.cdnUrl,
+          trimmedVideoSourceUrl: sourceUrl,
+          trimmedVideoStart: tStart,
+          trimmedVideoEnd: tEnd,
+        });
+      }
+      return trimJson.cdnUrl;
+    };
+
+    let finalVideoRefUrl = upstream.videoRefUrl;
+    const finalReferenceVideoUrls: string[] = [];
+    try {
+      if (finalVideoRefUrl) {
+        const videoRefEdge = edges.find((e) => e.target === id && e.targetHandle === "videoRef");
+        const sourceNode = videoRefEdge
+          ? nodes.find((node) => node.id === videoRefEdge.source) as Node<NodeData> | undefined
+          : undefined;
+        finalVideoRefUrl = await trimReference(sourceNode, finalVideoRefUrl);
+      }
+
+      const referenceVideoEdges = edges
+        .filter((edge) => edge.target === id && edge.targetHandle === "referenceVideo")
+        .slice(0, maxRefVideos);
+      for (const edge of referenceVideoEdges) {
+        const sourceNode = nodes.find((node) => node.id === edge.source) as Node<NodeData> | undefined;
+        const sourceUrl = (sourceNode?.data.videoUrl ?? sourceNode?.data.r2Url) as string | undefined;
+        if (sourceUrl) finalReferenceVideoUrls.push(await trimReference(sourceNode, sourceUrl));
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "The selected video passage could not be prepared.";
+      updateNodeData(id, { hasError: true, errorMsg: message });
+      addToast(message, "error");
+      return;
     }
 
     // Extract first/last frames from VideoInputNode sources connected via startFrameOut/endFrameOut
@@ -1022,7 +1066,7 @@ export default function VideoGeneratorNode({ id, data, selected }: NodeProps<Vid
       referenceImageUrls: orderedResources.length > 0
         ? orderedResources.map((r) => r.url)
         : undefined,
-      referenceVideoUrls: upstream.referenceVideoUrls.slice(0, maxRefVideos),
+      referenceVideoUrls: finalReferenceVideoUrls,
       referenceAudioUrls: upstream.referenceAudioUrls.slice(0, maxRefAudios),
       ...(cfg.supportsSeeds && seed ? { seed } : {}),
     };
