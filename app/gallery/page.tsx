@@ -3870,7 +3870,7 @@ function GalleryInner() {
           pointerEvents: anySelected && !promptExpanded ? "none" : "auto",
           width: promptExpanded ? "75vw" : "min(860px, calc(100vw - 32px))",
           height: promptExpanded ? "75vh" : "auto",
-          zIndex: 200,
+          zIndex: 40,
         }}
       >
 
