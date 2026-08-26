@@ -13,7 +13,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-const MIN_SELECTION_SECONDS = 3;
+const MIN_SELECTION_SECONDS = 4.2;
+const SELECTION_EPSILON_SECONDS = 0.001;
 
 type DragMode = "start" | "end" | "selection";
 
@@ -206,6 +207,8 @@ export default function VideoTrimDialog({
   }, []);
 
   const selectionDuration = Math.max(0, endTime - startTime);
+  const hasMinimumSelection = selectionDuration + SELECTION_EPSILON_SECONDS >= MIN_SELECTION_SECONDS;
+  const sourceTooShort = mediaDuration > 0 && mediaDuration + SELECTION_EPSILON_SECONDS < MIN_SELECTION_SECONDS;
   const startPercent = mediaDuration ? (startTime / mediaDuration) * 100 : 0;
   const endPercent = mediaDuration ? (endTime / mediaDuration) * 100 : 100;
   const currentPercent = mediaDuration ? (currentTime / mediaDuration) * 100 : 0;
@@ -222,7 +225,7 @@ export default function VideoTrimDialog({
             Trim video
           </DialogTitle>
           <DialogDescription>
-            Drag the start and end handles to keep only the passage that should be sent to the model.
+            Keep at least {MIN_SELECTION_SECONDS} seconds. Drag the start and end handles to select the passage sent to the model.
           </DialogDescription>
         </DialogHeader>
 
@@ -352,7 +355,11 @@ export default function VideoTrimDialog({
 
             <div className="flex items-center justify-between text-xs text-muted-foreground">
               <span>Drag the handles • drag the selected area to move it</span>
-              <span>{maxDuration ? `${maxDuration}s maximum` : `${MIN_SELECTION_SECONDS}s minimum`}</span>
+              <span>
+                {sourceTooShort
+                  ? `Source too short • ${MIN_SELECTION_SECONDS}s required`
+                  : `${MIN_SELECTION_SECONDS}s minimum${maxDuration ? ` • ${maxDuration}s maximum` : ""}`}
+              </span>
             </div>
           </div>
         </div>
@@ -367,8 +374,11 @@ export default function VideoTrimDialog({
             Reset
           </Button>
           <Button
-            disabled={!mediaDuration || selectionDuration < Math.min(MIN_SELECTION_SECONDS, mediaDuration)}
-            onClick={() => onApply(Number(startTime.toFixed(3)), Number(endTime.toFixed(3)), mediaDuration)}
+            disabled={!mediaDuration || !hasMinimumSelection}
+            onClick={() => {
+              if (!hasMinimumSelection) return;
+              onApply(Number(startTime.toFixed(3)), Number(endTime.toFixed(3)), mediaDuration);
+            }}
           >
             <Scissors data-icon="inline-start" />
             Keep this passage
