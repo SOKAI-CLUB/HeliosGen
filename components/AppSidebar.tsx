@@ -837,11 +837,18 @@ export function AppSidebar() {
   const avatarSeed = user?.id || "guest";
 
   const folderParam = selectedFolderId ? `&folder=${selectedFolderId}` : "";
-  const navItems = [
+  const navItems: Array<{
+    label: string;
+    href: string;
+    icon: React.ElementType;
+    active: boolean;
+    disabled?: boolean;
+    onClick?: (event: React.MouseEvent) => void;
+  }> = [
     { label: "Image", href: `/gallery?tab=images${folderParam}`, icon: ImageIcon, active: pathname === "/gallery" && tab === "images" },
     { label: "Video", href: `/gallery?tab=videos${folderParam}`, icon: VideoIcon, active: pathname === "/gallery" && tab === "videos" },
     { label: "Workflow", href: "/workflow", icon: Workflow, active: pathname === "/workflow" || (pathname.startsWith("/workflow/") && pathname !== "/workflow") },
-    { label: "Assets", href: "#", icon: Package, active: false, disabled: true },
+    { label: "Bibliothèque publicitaire", href: "/ad-library", icon: Package, active: pathname === "/ad-library" },
     { label: "Chat", href: "/chat", icon: MessageSquare, active: pathname === "/chat" },
     { label: "Settings", href: "#", icon: Settings, active: false, onClick: (e: React.MouseEvent) => { e.preventDefault(); if (user || process.env.NEXT_PUBLIC_GUEST_MODE === "true") setSettingsOpen(true); else setAuthModalOpen(true); } },
   ];
@@ -903,7 +910,7 @@ export function AppSidebar() {
         </div>
 
         {/* Folders section — hidden in icon mode */}
-        <div className="group-data-[collapsible=icon]:hidden flex flex-col shrink-0 px-2">
+        {pathname !== "/ad-library" && <div className="group-data-[collapsible=icon]:hidden flex flex-col shrink-0 px-2">
           <div className="border-t border-white/[0.06] mb-1" />
 
           {/* Section header */}
@@ -972,7 +979,7 @@ export function AppSidebar() {
               </div>
             )}
           </div>
-        </div>
+        </div>}
 
         {/* Chat history — hidden in icon mode */}
         <div className="group-data-[collapsible=icon]:hidden flex flex-col flex-1 min-h-0 px-2 pb-2">

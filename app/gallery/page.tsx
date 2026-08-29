@@ -7,7 +7,7 @@ import { IMAGE_MODELS, VIDEO_MODELS, AZURE_POPULAR_SIZES, validateAzureCustomSiz
 import { PROVIDERS, getModelProvider, setModelProvider, modelHasProviderChoice } from "@/lib/providers";
 import { useWorkflowStore } from "@/lib/store";
 import type { User } from "@supabase/supabase-js";
-import { Maximize2, Minimize2, Scissors, ShieldAlert, X } from "lucide-react";
+import { Library, Maximize2, Minimize2, Scissors, ShieldAlert, X } from "lucide-react";
 import { GalleryItem, getToken, galleryCache } from "@/lib/galleryUtils";
 import { useFolderStore } from "@/lib/folderStore";
 import { MediaPickerModal } from "@/components/MediaPickerModal";
@@ -18,6 +18,7 @@ import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { Button } from "@/components/ui/button";
 import { browserNotify, requestNotificationPermission } from "@/lib/browserNotify";
 import VideoTrimDialog from "@/components/nodes/VideoTrimDialog";
+import { AddToAdLibraryDialog } from "@/components/ad-library/AddToAdLibraryDialog";
 
 const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
@@ -1017,6 +1018,7 @@ function GalleryInner() {
   });
   const [lightboxItem, setLightboxItem] = useState<GalleryItem | null>(null);
   const [lightboxThumb, setLightboxThumb] = useState<string>("");
+  const [adLibraryTarget, setAdLibraryTarget] = useState<GalleryItem | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const anySelected = selectedIds.size > 0;
   const toggleSelect = (id: string) => setSelectedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
@@ -2771,6 +2773,57 @@ function GalleryInner() {
     setRefImages(prev => [...prev, { id: randomUUID(), objectUrl: url, cdnUrl: url, uploading: false, error: false }]);
   }, [refImages, maxImgs]);
 
+  useEffect(() => {
+    const rawTransfer = localStorage.getItem("hg-ad-library-transfer");
+    if (!rawTransfer) return;
+    const frame = requestAnimationFrame(() => {
+      try {
+        const transfer = JSON.parse(rawTransfer) as {
+          id: string;
+          url: string;
+          mediaType: "image" | "video";
+          title?: string;
+          createdAt?: number;
+        };
+        localStorage.removeItem("hg-ad-library-transfer");
+        if (!transfer.url || (transfer.createdAt && Date.now() - transfer.createdAt > 5 * 60_000)) return;
+        const reference: RefImage = {
+          id: `ad-library-${transfer.id}-${randomUUID()}`,
+          objectUrl: transfer.url,
+          cdnUrl: transfer.url,
+          uploading: false,
+          error: false,
+        };
+
+        if (tab === "images" && transfer.mediaType === "image") {
+          const compatibleModel = IMAGE_MODELS.find((model) => model.supportsImages);
+          if (compatibleModel) setModelId(compatibleModel.id);
+          setRefImages((previous) => previous.some((item) => item.cdnUrl === transfer.url) ? previous : [...previous, reference]);
+          addToast("Image ajoutée aux références depuis la bibliothèque publicitaire.", "success");
+          return;
+        }
+
+        if (tab === "videos" && transfer.mediaType === "image") {
+          const compatibleModel = VIDEO_MODELS.find((model) => model.handles.includes("startFrame"));
+          if (compatibleModel) setModelId(compatibleModel.id);
+          setVidStartFrame(reference);
+          addToast("Image ajoutée comme frame de départ depuis la bibliothèque publicitaire.", "success");
+          return;
+        }
+
+        if (tab === "videos" && transfer.mediaType === "video") {
+          const compatibleModel = VIDEO_MODELS.find((model) => model.handles.includes("referenceVideo"));
+          if (compatibleModel) setModelId(compatibleModel.id);
+          setVidRefVideos((previous) => previous.some((item) => item.cdnUrl === transfer.url) ? previous : [...previous, reference]);
+          addToast("B-roll ajouté aux vidéos de référence.", "success");
+        }
+      } catch {
+        // Ignore malformed or stale transfers.
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [addToast, tab]);
+
   const handleGalleryItemDrop = useCallback((
     e: React.DragEvent,
     target: "refImage" | "startFrame" | "endFrame" | "resource" | "videoRef" | "referenceVideo",
@@ -3536,6 +3589,13 @@ function GalleryInner() {
                         onCopyPrompt={handleCopyPrompt}
                         onDownload={handleDownload}
                         onDelete={handleDelete}
+                        onAddToLibrary={() => {
+                          if (!user && process.env.NEXT_PUBLIC_GUEST_MODE !== "true") {
+                            setAuthModalOpen(true);
+                            return;
+                          }
+                          setAdLibraryTarget(layoutItem.item);
+                        }}
                         videoMuted={videoMuted}
                         onToggleMute={() => setVideoMuted(m => !m)}
                         onNaturalRatioDiscovered={() => setNatRatioVersion(v => v + 1)}
@@ -3593,6 +3653,12 @@ function GalleryInner() {
           onCancel={cancelGalleryVideoTrim}
         />
       )}
+
+      <AddToAdLibraryDialog
+        item={adLibraryTarget}
+        onClose={() => setAdLibraryTarget(null)}
+        onAdded={() => addToast("Média ajouté à la bibliothèque publicitaire.", "success", "/ad-library", "B-roll enregistré")}
+      />
 
       {/* ── Hidden file input ── */}
       <input
@@ -6255,6 +6321,7 @@ function GalleryCard({
   onCopyPrompt,
   onDownload,
   onDelete,
+  onAddToLibrary,
   videoMuted,
   onToggleMute,
   onNaturalRatioDiscovered,
@@ -6273,6 +6340,7 @@ function GalleryCard({
   onCopyPrompt?: (prompt: string, refUrls?: string[], meta?: { model?: string; aspectRatio?: string; quality?: string; azureResolution?: string }) => void;
   onDownload?: (url: string, isVideo: boolean) => Promise<void>;
   onDelete?: (id: string, source: "generation" | "upload") => Promise<void>;
+  onAddToLibrary?: () => void;
   videoMuted?: boolean;
   onToggleMute?: () => void;
   onNaturalRatioDiscovered?: () => void;
@@ -6400,6 +6468,11 @@ function GalleryCard({
     if (deleting) return;
     setDeleting(true);
     try { await onDelete?.(item.id, item.source); } finally { setDeleting(false); }
+  };
+
+  const handleAddToLibrary = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onAddToLibrary?.();
   };
 
   if (failed) {
@@ -6640,15 +6713,23 @@ function GalleryCard({
         )}
       </div>
 
-      {/* ── Bottom-left Reference button (images only) ── */}
-      {!isVideo && onAddReference && (
+      {/* ── Bottom media actions ── */}
+      {((!isVideo && onAddReference) || onAddToLibrary) && (
         <div className="gallery-actions-bottom">
-          <button className="gallery-ref-btn" onClick={handleAddRef}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="m21 15-5-5L5 21" />
-            </svg>
-            Reference
-          </button>
+          {!isVideo && onAddReference && (
+            <button className="gallery-ref-btn" onClick={handleAddRef}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="m21 15-5-5L5 21" />
+              </svg>
+              Reference
+            </button>
+          )}
+          {onAddToLibrary && (
+            <button className="gallery-ref-btn" onClick={handleAddToLibrary}>
+              <Library size={12} />
+              Ajouter au B-roll
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -7584,6 +7665,8 @@ const GALLERY_CSS = `
     transition: opacity 180ms ease;
     z-index: 5;
     pointer-events: none;
+    display: flex;
+    gap: 5px;
   }
   .gallery-item:hover .gallery-actions-bottom {
     opacity: 1;
