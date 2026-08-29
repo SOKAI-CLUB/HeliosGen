@@ -37,6 +37,9 @@ export interface AdLibraryData {
   folders: AdLibraryFolder[];
   assets: AdLibraryAsset[];
   tags: AdLibraryTag[];
+  permissions: {
+    canDeleteAssets: boolean;
+  };
 }
 
 export type AdLibraryMutation =

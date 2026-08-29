@@ -35,7 +35,12 @@ interface AddToAdLibraryDialogProps {
   onAdded?: () => void;
 }
 
-const emptyLibrary: AdLibraryData = { folders: [], assets: [], tags: [] };
+const emptyLibrary: AdLibraryData = {
+  folders: [],
+  assets: [],
+  tags: [],
+  permissions: { canDeleteAssets: false },
+};
 
 export function AddToAdLibraryDialog({ item, onClose, onAdded }: AddToAdLibraryDialogProps) {
   if (!item) return null;

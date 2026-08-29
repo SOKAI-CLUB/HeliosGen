@@ -2,12 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 
 import type { AdLibraryMutation } from "@/lib/adLibrary";
 import * as guestDb from "@/lib/guest/db";
-import { GUEST_MODE, resolveUserId } from "@/lib/guestMode";
+import { GUEST_MODE, resolveUser } from "@/lib/guestMode";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
 const MAX_FOLDER_NAME = 80;
 const MAX_TAG_NAME = 40;
 const MAX_TITLE = 160;
+const ASSET_DELETE_EMAILS = new Set(["quentin@sokai.club", "axel@sokai.club"]);
+
+function canDeleteAssets(email: string | null): boolean {
+  return GUEST_MODE || (email !== null && ASSET_DELETE_EMAILS.has(email.trim().toLocaleLowerCase()));
+}
 
 function cleanText(value: unknown, maxLength: number): string {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
@@ -27,19 +32,18 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
-async function folderBelongsToUser(folderId: string | null, userId: string): Promise<boolean> {
+async function folderExists(folderId: string | null, userId: string): Promise<boolean> {
   if (!folderId) return true;
   if (GUEST_MODE) return guestDb.getAdLibraryFolders(userId).some((folder) => folder.id === folderId);
   const { data } = await supabaseAdmin
     .from("ad_library_folders")
     .select("id")
     .eq("id", folderId)
-    .eq("user_id", userId)
     .maybeSingle();
   return Boolean(data);
 }
 
-async function loadLibrary(userId: string) {
+async function loadLibrary(userId: string, allowAssetDeletion: boolean) {
   if (GUEST_MODE) {
     const folders = guestDb.getAdLibraryFolders(userId);
     const assets = guestDb.getAdLibraryAssets(userId);
@@ -70,6 +74,7 @@ async function loadLibrary(userId: string) {
         updatedAt: asset.updated_at,
       })),
       tags: tags.map((tag) => ({ id: tag.id, name: tag.name, createdAt: tag.created_at })),
+      permissions: { canDeleteAssets: allowAssetDeletion },
     };
   }
 
@@ -77,22 +82,18 @@ async function loadLibrary(userId: string) {
     supabaseAdmin
       .from("ad_library_folders")
       .select("id, name, parent_id, order_index, created_at, updated_at")
-      .eq("user_id", userId)
       .order("order_index", { ascending: true }),
     supabaseAdmin
       .from("ad_library_assets")
       .select("id, folder_id, source_item_id, source_type, media_type, url, title, duration, trim_start, trim_end, created_at, updated_at")
-      .eq("user_id", userId)
       .order("created_at", { ascending: false }),
     supabaseAdmin
       .from("ad_library_tags")
       .select("id, name, created_at")
-      .eq("user_id", userId)
       .order("name", { ascending: true }),
     supabaseAdmin
       .from("ad_library_asset_tags")
-      .select("asset_id, tag_id")
-      .eq("user_id", userId),
+      .select("asset_id, tag_id"),
   ]);
 
   const error = foldersResult.error ?? assetsResult.error ?? tagsResult.error ?? assetTagsResult.error;
@@ -128,6 +129,7 @@ async function loadLibrary(userId: string) {
       name: tag.name,
       createdAt: tag.created_at,
     })),
+    permissions: { canDeleteAssets: allowAssetDeletion },
   };
 }
 
@@ -137,7 +139,6 @@ async function ensureAsset(userId: string, assetId: string): Promise<boolean> {
     .from("ad_library_assets")
     .select("id")
     .eq("id", assetId)
-    .eq("user_id", userId)
     .maybeSingle();
   return Boolean(data);
 }
@@ -152,7 +153,6 @@ async function validTagIds(userId: string, tagIds: string[]): Promise<string[]> 
   const { data, error } = await supabaseAdmin
     .from("ad_library_tags")
     .select("id")
-    .eq("user_id", userId)
     .in("id", uniqueIds);
   if (error) throw error;
   return (data ?? []).map((tag) => tag.id);
@@ -167,8 +167,7 @@ async function replaceAssetTags(userId: string, assetId: string, tagIds: string[
   const { error: deleteError } = await supabaseAdmin
     .from("ad_library_asset_tags")
     .delete()
-    .eq("asset_id", assetId)
-    .eq("user_id", userId);
+    .eq("asset_id", assetId);
   if (deleteError) throw deleteError;
   if (ownedTagIds.length === 0) return;
   const { error: insertError } = await supabaseAdmin.from("ad_library_asset_tags").insert(
@@ -178,10 +177,10 @@ async function replaceAssetTags(userId: string, assetId: string, tagIds: string[
 }
 
 export async function GET(req: NextRequest) {
-  const userId = await resolveUserId(req);
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const user = await resolveUser(req);
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
-    return NextResponse.json(await loadLibrary(userId));
+    return NextResponse.json(await loadLibrary(user.id, canDeleteAssets(user.email)));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("[ad-library] GET error:", message);
@@ -190,8 +189,10 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const userId = await resolveUserId(req);
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const user = await resolveUser(req);
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const userId = user.id;
+  const allowAssetDeletion = canDeleteAssets(user.email);
 
   try {
     const body = await req.json() as AdLibraryMutation;
@@ -200,7 +201,7 @@ export async function POST(req: NextRequest) {
       const name = cleanText(body.name, MAX_FOLDER_NAME);
       const parentId = body.parentId ?? null;
       if (!name) return NextResponse.json({ error: "Le nom du dossier est requis." }, { status: 400 });
-      if (!(await folderBelongsToUser(parentId, userId))) {
+      if (!(await folderExists(parentId, userId))) {
         return NextResponse.json({ error: "Dossier parent introuvable." }, { status: 404 });
       }
       if (GUEST_MODE) {
@@ -213,8 +214,7 @@ export async function POST(req: NextRequest) {
       } else {
         const { count } = await supabaseAdmin
           .from("ad_library_folders")
-          .select("id", { count: "exact", head: true })
-          .eq("user_id", userId);
+          .select("id", { count: "exact", head: true });
         const { error } = await supabaseAdmin.from("ad_library_folders").insert({
           user_id: userId,
           name,
@@ -231,8 +231,7 @@ export async function POST(req: NextRequest) {
         const { error } = await supabaseAdmin
           .from("ad_library_folders")
           .update({ name })
-          .eq("id", body.folderId)
-          .eq("user_id", userId);
+          .eq("id", body.folderId);
         if (error) throw error;
       }
     } else if (body.action === "delete-folder") {
@@ -241,8 +240,7 @@ export async function POST(req: NextRequest) {
         const { error } = await supabaseAdmin
           .from("ad_library_folders")
           .delete()
-          .eq("id", body.folderId)
-          .eq("user_id", userId);
+          .eq("id", body.folderId);
         if (error) throw error;
       }
     } else if (body.action === "add-asset") {
@@ -257,7 +255,7 @@ export async function POST(req: NextRequest) {
       if (!allowedSourceTypes.has(body.sourceType)) {
         return NextResponse.json({ error: "Source invalide." }, { status: 400 });
       }
-      if (!(await folderBelongsToUser(folderId, userId))) {
+      if (!(await folderExists(folderId, userId))) {
         return NextResponse.json({ error: "Dossier introuvable." }, { status: 404 });
       }
       const assetData = {
@@ -286,7 +284,7 @@ export async function POST(req: NextRequest) {
       }
       await replaceAssetTags(userId, assetId, body.tagIds ?? []);
     } else if (body.action === "move-asset") {
-      if (!(await folderBelongsToUser(body.folderId, userId))) {
+      if (!(await folderExists(body.folderId, userId))) {
         return NextResponse.json({ error: "Dossier introuvable." }, { status: 404 });
       }
       if (GUEST_MODE) guestDb.updateAdLibraryAsset(body.assetId, userId, { folder_id: body.folderId });
@@ -294,8 +292,7 @@ export async function POST(req: NextRequest) {
         const { error } = await supabaseAdmin
           .from("ad_library_assets")
           .update({ folder_id: body.folderId })
-          .eq("id", body.assetId)
-          .eq("user_id", userId);
+          .eq("id", body.assetId);
         if (error) throw error;
       }
     } else if (body.action === "rename-asset") {
@@ -305,18 +302,22 @@ export async function POST(req: NextRequest) {
         const { error } = await supabaseAdmin
           .from("ad_library_assets")
           .update({ title })
-          .eq("id", body.assetId)
-          .eq("user_id", userId);
+          .eq("id", body.assetId);
         if (error) throw error;
       }
     } else if (body.action === "delete-asset") {
+      if (!allowAssetDeletion) {
+        return NextResponse.json(
+          { error: "Seuls Quentin et Axel peuvent supprimer un B-roll." },
+          { status: 403 },
+        );
+      }
       if (GUEST_MODE) guestDb.deleteAdLibraryAsset(body.assetId, userId);
       else {
         const { error } = await supabaseAdmin
           .from("ad_library_assets")
           .delete()
-          .eq("id", body.assetId)
-          .eq("user_id", userId);
+          .eq("id", body.assetId);
         if (error) throw error;
       }
     } else if (body.action === "create-tag") {
@@ -327,8 +328,8 @@ export async function POST(req: NextRequest) {
         const { data: existing } = await supabaseAdmin
           .from("ad_library_tags")
           .select("id")
-          .eq("user_id", userId)
           .ilike("name", name)
+          .limit(1)
           .maybeSingle();
         if (!existing) {
           const { error } = await supabaseAdmin.from("ad_library_tags").insert({ user_id: userId, name });
@@ -341,8 +342,7 @@ export async function POST(req: NextRequest) {
         const { error } = await supabaseAdmin
           .from("ad_library_tags")
           .delete()
-          .eq("id", body.tagId)
-          .eq("user_id", userId);
+          .eq("id", body.tagId);
         if (error) throw error;
       }
     } else if (body.action === "set-asset-tags") {
@@ -354,7 +354,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Action inconnue." }, { status: 400 });
     }
 
-    return NextResponse.json(await loadLibrary(userId));
+    return NextResponse.json(await loadLibrary(userId, allowAssetDeletion));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("[ad-library] POST error:", message);

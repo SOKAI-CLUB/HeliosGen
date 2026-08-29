@@ -59,7 +59,12 @@ import { getToken } from "@/lib/galleryUtils";
 type MediaFilter = "all" | "video" | "image";
 type FolderSelection = "all" | "unfiled" | string;
 
-const emptyLibrary: AdLibraryData = { folders: [], assets: [], tags: [] };
+const emptyLibrary: AdLibraryData = {
+  folders: [],
+  assets: [],
+  tags: [],
+  permissions: { canDeleteAssets: false },
+};
 
 function formatDuration(seconds: number | null): string | null {
   if (seconds === null || !Number.isFinite(seconds)) return null;
@@ -215,6 +220,10 @@ export default function AdLibraryPage() {
   };
 
   const deleteAsset = async (asset: AdLibraryAsset) => {
+    if (!library.permissions.canDeleteAssets) {
+      setError("Seuls Quentin et Axel peuvent supprimer un B-roll.");
+      return;
+    }
     if (!window.confirm(`Retirer « ${assetLabel(asset)} » de la bibliothèque ?`)) return;
     const next = await runMutation({ action: "delete-asset", assetId: asset.id });
     if (next) {
@@ -282,7 +291,7 @@ export default function AdLibraryPage() {
               <Library className="text-muted-foreground" />
               <h1 className="text-xl font-semibold tracking-tight">Bibliothèque publicitaire</h1>
             </div>
-            <p className="text-sm text-muted-foreground">Centralisez vos rushs et retrouvez le bon plan en quelques secondes.</p>
+            <p className="text-sm text-muted-foreground">Centralisez les rushs de l’équipe et retrouvez le bon plan en quelques secondes.</p>
           </div>
           <div className="flex items-center gap-2">
             <Button onClick={() => setFolderDialog({ mode: "create", value: "" })} variant="outline">
@@ -491,10 +500,14 @@ export default function AdLibraryPage() {
                           {asset.mediaType === "image" && <DropdownMenuItem onClick={() => sendToGallery(asset, "images")}><ImageIcon /> Utiliser dans Image</DropdownMenuItem>}
                           <DropdownMenuItem onClick={() => sendToGallery(asset, "videos")}><Video /> Utiliser dans Vidéo</DropdownMenuItem>
                         </DropdownMenuGroup>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuGroup>
-                          <DropdownMenuItem variant="destructive" onClick={() => void deleteAsset(asset)}><Trash2 /> Retirer</DropdownMenuItem>
-                        </DropdownMenuGroup>
+                        {library.permissions.canDeleteAssets && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuGroup>
+                              <DropdownMenuItem variant="destructive" onClick={() => void deleteAsset(asset)}><Trash2 /> Retirer</DropdownMenuItem>
+                            </DropdownMenuGroup>
+                          </>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
