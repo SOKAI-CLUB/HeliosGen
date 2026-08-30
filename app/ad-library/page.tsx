@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
+  ArrowUpRight,
   Check,
   Download,
   Film,
@@ -16,9 +18,11 @@ import {
   Play,
   Plus,
   Search,
+  Sparkles,
   Tag,
   Trash2,
   Upload,
+  UsersRound,
   Video,
   X,
 } from "lucide-react";
@@ -90,6 +94,7 @@ function downloadAsset(asset: AdLibraryAsset) {
 
 export default function AdLibraryPage() {
   const router = useRouter();
+  const prefersReducedMotion = useReducedMotion();
   const [library, setLibrary] = useState<AdLibraryData>(emptyLibrary);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -158,6 +163,12 @@ export default function AdLibraryPage() {
     : selectedFolderId === "unfiled"
       ? "Sans dossier"
       : library.folders.find((folder) => folder.id === selectedFolderId)?.name ?? "Dossier";
+
+  const videoCount = useMemo(
+    () => library.assets.filter((asset) => asset.mediaType === "video").length,
+    [library.assets],
+  );
+  const imageCount = library.assets.length - videoCount;
 
   const runMutation = async (mutation: Parameters<typeof mutateAdLibrary>[0]) => {
     setSaving(true);
@@ -277,93 +288,141 @@ export default function AdLibraryPage() {
       url: asset.url,
       mediaType: asset.mediaType,
       title: assetLabel(asset),
-      createdAt: Date.now(),
     }));
     router.push(`/gallery?tab=${tab}`);
   };
 
   return (
     <main className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
-      <header className="flex flex-col gap-4 border-b px-5 py-5 lg:px-7">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center gap-2">
-              <Library className="text-muted-foreground" />
-              <h1 className="text-xl font-semibold tracking-tight">Bibliothèque publicitaire</h1>
-            </div>
-            <p className="text-sm text-muted-foreground">Centralisez les rushs de l’équipe et retrouvez le bon plan en quelques secondes.</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button onClick={() => setFolderDialog({ mode: "create", value: "" })} variant="outline">
-              <FolderPlus data-icon="inline-start" />
-              Nouveau dossier
-            </Button>
-            <Button disabled={uploading} onClick={() => fileInputRef.current?.click()}>
-              {uploading ? <Spinner data-icon="inline-start" /> : <Upload data-icon="inline-start" />}
-              {uploading ? "Import en cours…" : "Importer"}
-            </Button>
-            <input
-              ref={fileInputRef}
-              className="hidden"
-              type="file"
-              accept="image/*,video/*"
-              multiple
-              onChange={(event) => { if (event.target.files) void uploadFiles(event.target.files); }}
-            />
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative min-w-52 flex-1 sm:max-w-sm">
-            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input aria-label="Rechercher dans la bibliothèque" className="pl-8" placeholder="Rechercher un rush ou un tag…" value={search} onChange={(event) => setSearch(event.target.value)} />
-          </div>
-          <ToggleGroup
-            value={[mediaFilter]}
-            onValueChange={(values) => setMediaFilter((values[0] as MediaFilter | undefined) ?? "all")}
-            variant="outline"
-            spacing={0}
-          >
-            <ToggleGroupItem value="all">Tous</ToggleGroupItem>
-            <ToggleGroupItem value="video"><Video data-icon="inline-start" /> Vidéos</ToggleGroupItem>
-            <ToggleGroupItem value="image"><ImageIcon data-icon="inline-start" /> Images</ToggleGroupItem>
-          </ToggleGroup>
-          <Button onClick={() => setTagDialogOpen(true)} variant="outline">
-            <Tag data-icon="inline-start" />
-            Gérer les tags
-          </Button>
-        </div>
-
-        {library.tags.length > 0 && (
-          <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
-            <span className="shrink-0 text-xs font-medium text-muted-foreground">Filtrer par tag</span>
-            <ToggleGroup
-              className="flex-nowrap"
-              multiple
-              value={selectedTagIds}
-              onValueChange={setSelectedTagIds}
-              variant="outline"
-              size="sm"
+      <header className="relative overflow-hidden border-b bg-muted/10 px-5 py-5 lg:px-7 lg:py-6">
+        <motion.div
+          aria-hidden="true"
+          className="pointer-events-none absolute -top-24 right-12 size-64 rounded-full bg-primary/10 blur-3xl"
+          animate={prefersReducedMotion ? undefined : { x: [0, 36, 0], y: [0, 18, 0], scale: [1, 1.08, 1] }}
+          transition={prefersReducedMotion ? undefined : { duration: 14, ease: "easeInOut", repeat: Infinity }}
+        />
+        <div className="relative flex flex-col gap-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <motion.div
+              className="flex max-w-2xl flex-col gap-2"
+              initial={prefersReducedMotion ? false : { opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
             >
-              {library.tags.map((tag) => <ToggleGroupItem key={tag.id} value={tag.id}>{tag.name}</ToggleGroupItem>)}
-            </ToggleGroup>
-            {selectedTagIds.length > 0 && (
-              <Button onClick={() => setSelectedTagIds([])} size="sm" variant="ghost"><X data-icon="inline-start" /> Effacer</Button>
-            )}
+              <Badge className="mb-1" variant="outline">
+                <UsersRound data-icon="inline-start" />
+                Bibliothèque partagée
+              </Badge>
+              <div className="flex items-center gap-2">
+                <div className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+                  <Library />
+                </div>
+                <h1 className="text-2xl font-semibold tracking-tight lg:text-3xl">Bibliothèque publicitaire</h1>
+              </div>
+              <p className="text-sm leading-relaxed text-muted-foreground">Centralisez les rushs de l’équipe, classez-les et réutilisez-les dans vos prochaines créations.</p>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <Badge variant="secondary"><Film data-icon="inline-start" /> {library.assets.length} média{library.assets.length > 1 ? "s" : ""}</Badge>
+                <Badge variant="secondary"><Video data-icon="inline-start" /> {videoCount} vidéo{videoCount > 1 ? "s" : ""}</Badge>
+                <Badge variant="secondary"><ImageIcon data-icon="inline-start" /> {imageCount} image{imageCount > 1 ? "s" : ""}</Badge>
+              </div>
+            </motion.div>
+
+            <motion.div
+              className="flex items-center gap-2"
+              initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: prefersReducedMotion ? 0 : 0.08, duration: 0.35 }}
+            >
+              <Button onClick={() => setFolderDialog({ mode: "create", value: "" })} variant="outline">
+                <FolderPlus data-icon="inline-start" />
+                Nouveau dossier
+              </Button>
+              <Button disabled={uploading} onClick={() => fileInputRef.current?.click()}>
+                {uploading ? <Spinner data-icon="inline-start" /> : <Upload data-icon="inline-start" />}
+                {uploading ? "Import en cours…" : "Importer"}
+              </Button>
+              <input
+                ref={fileInputRef}
+                className="hidden"
+                type="file"
+                accept="image/*,video/*"
+                multiple
+                onChange={(event) => { if (event.target.files) void uploadFiles(event.target.files); }}
+              />
+            </motion.div>
           </div>
-        )}
+
+          <motion.div
+            className="flex flex-wrap items-center gap-2 rounded-2xl border bg-background/75 p-2 shadow-sm backdrop-blur-xl"
+            initial={prefersReducedMotion ? false : { opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: prefersReducedMotion ? 0 : 0.12, duration: 0.4 }}
+          >
+            <div className="relative min-w-52 flex-1 sm:max-w-sm">
+              <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input aria-label="Rechercher dans la bibliothèque" className="border-0 bg-transparent pl-8 shadow-none" placeholder="Rechercher un rush ou un tag…" value={search} onChange={(event) => setSearch(event.target.value)} />
+            </div>
+            <ToggleGroup
+              value={[mediaFilter]}
+              onValueChange={(values) => setMediaFilter((values[0] as MediaFilter | undefined) ?? "all")}
+              variant="outline"
+              spacing={0}
+            >
+              <ToggleGroupItem value="all">Tous</ToggleGroupItem>
+              <ToggleGroupItem value="video"><Video data-icon="inline-start" /> Vidéos</ToggleGroupItem>
+              <ToggleGroupItem value="image"><ImageIcon data-icon="inline-start" /> Images</ToggleGroupItem>
+            </ToggleGroup>
+            <Button onClick={() => setTagDialogOpen(true)} variant="ghost">
+              <Tag data-icon="inline-start" />
+              Gérer les tags
+            </Button>
+          </motion.div>
+
+          <AnimatePresence initial={false}>
+            {library.tags.length > 0 && (
+              <motion.div
+                className="flex items-center gap-2 overflow-x-auto pb-0.5"
+                initial={prefersReducedMotion ? false : { opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={prefersReducedMotion ? undefined : { opacity: 0, height: 0 }}
+              >
+                <span className="shrink-0 text-xs font-medium text-muted-foreground">Filtrer par tag</span>
+                <ToggleGroup
+                  className="flex-nowrap"
+                  multiple
+                  value={selectedTagIds}
+                  onValueChange={setSelectedTagIds}
+                  variant="outline"
+                  size="sm"
+                >
+                  {library.tags.map((tag) => <ToggleGroupItem key={tag.id} value={tag.id}>{tag.name}</ToggleGroupItem>)}
+                </ToggleGroup>
+                {selectedTagIds.length > 0 && (
+                  <Button onClick={() => setSelectedTagIds([])} size="sm" variant="ghost"><X data-icon="inline-start" /> Effacer</Button>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </header>
 
-      {error && (
-        <div className="flex items-center justify-between gap-3 border-b bg-destructive/10 px-5 py-2 text-sm text-destructive lg:px-7">
-          <span>{error}</span>
-          <Button onClick={() => { setLoading(true); void load(); }} size="sm" variant="ghost">Réessayer</Button>
-        </div>
-      )}
+      <AnimatePresence initial={false}>
+        {error && (
+          <motion.div
+            className="flex items-center justify-between gap-3 border-b bg-destructive/10 px-5 py-2 text-sm text-destructive lg:px-7"
+            initial={prefersReducedMotion ? false : { opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={prefersReducedMotion ? undefined : { opacity: 0, height: 0 }}
+          >
+            <span>{error}</span>
+            <Button onClick={() => { setLoading(true); void load(); }} size="sm" variant="ghost">Réessayer</Button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="flex min-h-0 flex-1">
-        <aside className="hidden w-56 shrink-0 flex-col border-r bg-muted/20 md:flex">
-          <div className="flex items-center justify-between px-3 py-3">
+        <aside className="hidden w-60 shrink-0 flex-col border-r bg-muted/10 md:flex">
+          <div className="flex items-center justify-between px-3 py-4">
             <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Dossiers</span>
             <Button aria-label="Créer un dossier" onClick={() => setFolderDialog({ mode: "create", value: "" })} size="icon-sm" variant="ghost"><Plus /></Button>
           </div>
@@ -382,7 +441,13 @@ export default function AdLibraryPage() {
             {library.folders.map((folder) => {
               const active = selectedFolderId === folder.id;
               return (
-                <div className="group flex items-center" key={folder.id}>
+                <motion.div
+                  className="group flex items-center"
+                  key={folder.id}
+                  layout={!prefersReducedMotion}
+                  initial={prefersReducedMotion ? false : { opacity: 0, x: -8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                >
                   <Button className="min-w-0 flex-1 justify-start" onClick={() => setSelectedFolderId(folder.id)} variant={active ? "secondary" : "ghost"}>
                     <Folder data-icon="inline-start" />
                     <span className="truncate">{folder.name}</span>
@@ -402,16 +467,19 @@ export default function AdLibraryPage() {
                       </DropdownMenuGroup>
                     </DropdownMenuContent>
                   </DropdownMenu>
-                </div>
+                </motion.div>
               );
             })}
           </div>
         </aside>
 
-        <section className="min-w-0 flex-1 overflow-y-auto px-4 py-4 lg:px-6">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <section className="min-w-0 flex-1 overflow-y-auto bg-gradient-to-b from-muted/10 to-background px-4 py-5 lg:px-6">
+          <motion.div
+            className="mb-5 flex flex-wrap items-center justify-between gap-2"
+            layout={!prefersReducedMotion}
+          >
             <div className="flex items-center gap-2">
-              <h2 className="font-medium">{selectedFolderName}</h2>
+              <h2 className="text-lg font-semibold tracking-tight">{selectedFolderName}</h2>
               <Badge variant="secondary">{visibleAssets.length}</Badge>
             </div>
             <div className="flex items-center gap-2 md:hidden">
@@ -427,55 +495,104 @@ export default function AdLibraryPage() {
                 {library.folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
               </select>
             </div>
-          </div>
+          </motion.div>
 
           {loading ? (
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-              {Array.from({ length: 10 }).map((_, index) => <Skeleton className="aspect-video rounded-xl" key={index} />)}
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
+              {Array.from({ length: 10 }).map((_, index) => (
+                <motion.div
+                  key={index}
+                  initial={prefersReducedMotion ? false : { opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: prefersReducedMotion ? 0 : index * 0.035 }}
+                >
+                  <Skeleton className="aspect-video rounded-2xl" />
+                </motion.div>
+              ))}
             </div>
           ) : visibleAssets.length === 0 ? (
-            <Empty className="min-h-[50vh] border">
-              <EmptyHeader>
-                <EmptyMedia variant="icon"><Film /></EmptyMedia>
-                <EmptyTitle>{library.assets.length === 0 ? "Votre bibliothèque est prête" : "Aucun média ne correspond"}</EmptyTitle>
-                <EmptyDescription>
-                  {library.assets.length === 0
-                    ? "Survolez une image ou une vidéo dans la galerie et choisissez « Ajouter au B-roll », ou importez vos rushs directement."
-                    : "Essayez un autre dossier, retirez un filtre ou modifiez votre recherche."}
-                </EmptyDescription>
-              </EmptyHeader>
-              {library.assets.length === 0 && (
-                <EmptyContent>
-                  <Button onClick={() => fileInputRef.current?.click()}><Upload data-icon="inline-start" /> Importer des rushs</Button>
-                </EmptyContent>
-              )}
-            </Empty>
+            <motion.div initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }}>
+              <Empty className="min-h-[50vh] border bg-background/60 shadow-sm backdrop-blur-sm">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon"><Sparkles /></EmptyMedia>
+                  <EmptyTitle>{library.assets.length === 0 ? "Votre bibliothèque est prête" : "Aucun média ne correspond"}</EmptyTitle>
+                  <EmptyDescription>
+                    {library.assets.length === 0
+                      ? "Survolez une image ou une vidéo dans la galerie et choisissez « Ajouter au B-roll », ou importez vos rushs directement."
+                      : "Essayez un autre dossier, retirez un filtre ou modifiez votre recherche."}
+                  </EmptyDescription>
+                </EmptyHeader>
+                {library.assets.length === 0 && (
+                  <EmptyContent>
+                    <Button onClick={() => fileInputRef.current?.click()}><Upload data-icon="inline-start" /> Importer des rushs</Button>
+                  </EmptyContent>
+                )}
+              </Empty>
+            </motion.div>
           ) : (
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-              {visibleAssets.map((asset) => (
-                <article
-                  className="group relative aspect-video cursor-pointer overflow-hidden rounded-xl border bg-muted outline-none transition-shadow hover:ring-2 hover:ring-ring/40 focus-visible:ring-3 focus-visible:ring-ring/50"
+            <motion.div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4" layout={!prefersReducedMotion}>
+              <AnimatePresence initial={!prefersReducedMotion} mode="popLayout">
+              {visibleAssets.map((asset, index) => (
+                <motion.article
+                  className="group relative aspect-video cursor-pointer overflow-hidden rounded-2xl border bg-muted shadow-sm outline-none transition-[box-shadow,border-color] duration-300 hover:border-ring/40 hover:shadow-xl focus-visible:ring-3 focus-visible:ring-ring/50"
                   key={asset.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setPreviewAsset(asset)}
-                  onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setPreviewAsset(asset); }}
+                  layout={!prefersReducedMotion}
+                  initial={prefersReducedMotion ? false : { opacity: 0, y: 16, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={prefersReducedMotion ? undefined : { opacity: 0, scale: 0.96 }}
+                  whileHover={prefersReducedMotion ? undefined : { y: -5 }}
+                  transition={{
+                    delay: prefersReducedMotion ? 0 : Math.min(index, 10) * 0.03,
+                    duration: 0.4,
+                    ease: [0.16, 1, 0.3, 1],
+                    layout: { duration: 0.3 },
+                  }}
+                  onMouseEnter={(event) => {
+                    event.currentTarget.querySelector("video")?.play().catch(() => {});
+                  }}
+                  onMouseLeave={(event) => {
+                    const video = event.currentTarget.querySelector("video");
+                    if (video) {
+                      video.pause();
+                      video.currentTime = 0;
+                    }
+                  }}
                 >
                   {asset.mediaType === "video" ? (
-                    <video className="size-full object-cover" src={asset.url} muted loop playsInline preload="metadata" onMouseEnter={(event) => event.currentTarget.play().catch(() => {})} onMouseLeave={(event) => { event.currentTarget.pause(); event.currentTarget.currentTime = 0; }} />
+                    <video className="size-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.04]" src={asset.url} muted loop playsInline preload="metadata" />
                   ) : (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img className="size-full object-cover" src={asset.url} alt={assetLabel(asset)} loading="lazy" />
+                    <img className="size-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.04]" src={asset.url} alt={assetLabel(asset)} loading="lazy" />
                   )}
 
-                  {asset.mediaType === "video" && <div className="pointer-events-none absolute inset-0 flex items-center justify-center"><span className="flex size-10 items-center justify-center rounded-full bg-background/75 opacity-80 transition-opacity group-hover:opacity-0"><Play className="fill-current" /></span></div>}
+                  <button
+                    aria-label={`Ouvrir l’aperçu de ${assetLabel(asset)}`}
+                    className="absolute inset-0 rounded-2xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                    onClick={() => setPreviewAsset(asset)}
+                    type="button"
+                  />
 
-                  <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col gap-2 bg-gradient-to-t from-background/95 via-background/65 to-transparent p-3 pt-10">
-                    <div className="flex items-end justify-between gap-2">
-                      <div className="min-w-0">
-                        <h3 className="truncate text-sm font-medium">{assetLabel(asset)}</h3>
-                        <p className="text-xs text-muted-foreground">{asset.mediaType === "video" ? "Vidéo" : "Image"}{formatDuration(asset.duration) ? ` · ${formatDuration(asset.duration)}` : ""}</p>
-                      </div>
+                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-background via-background/10 to-transparent opacity-90 transition-opacity duration-500 group-hover:opacity-70" />
+
+                  <div className="pointer-events-none absolute top-2 left-2 flex items-center gap-1.5">
+                    <Badge className="backdrop-blur-md" variant="secondary">
+                      {asset.mediaType === "video" ? <Video data-icon="inline-start" /> : <ImageIcon data-icon="inline-start" />}
+                      {asset.mediaType === "video" ? "Vidéo" : "Image"}
+                    </Badge>
+                    {formatDuration(asset.duration) && <Badge className="backdrop-blur-md" variant="outline">{formatDuration(asset.duration)}</Badge>}
+                  </div>
+
+                  {asset.mediaType === "video" && (
+                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                      <span className="flex size-11 items-center justify-center rounded-full bg-background/80 shadow-lg backdrop-blur-md transition-all duration-300 group-hover:scale-125 group-hover:opacity-0">
+                        <Play className="fill-current" />
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col gap-2 p-3 transition-all duration-300 group-hover:translate-y-2 group-hover:opacity-0 group-focus-within:translate-y-2 group-focus-within:opacity-0">
+                    <div className="min-w-0">
+                      <h3 className="truncate text-sm font-medium">{assetLabel(asset)}</h3>
                     </div>
                     {asset.tagIds.length > 0 && (
                       <div className="flex min-w-0 gap-1 overflow-hidden">
@@ -485,7 +602,21 @@ export default function AdLibraryPage() {
                     )}
                   </div>
 
-                  <div className="absolute top-2 right-2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100" onClick={(event) => event.stopPropagation()}>
+                  <div className="absolute inset-x-3 bottom-3 flex translate-y-2 items-center justify-between gap-2 opacity-0 transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100" onClick={(event) => event.stopPropagation()}>
+                    <Button onClick={() => setPreviewAsset(asset)} size="sm" variant="secondary">
+                      <Play data-icon="inline-start" /> Aperçu
+                    </Button>
+                    <div className="flex items-center gap-1">
+                      {asset.mediaType === "image" && (
+                        <Button aria-label="Utiliser dans Image" onClick={() => sendToGallery(asset, "images")} size="icon-sm" variant="secondary"><ImageIcon /></Button>
+                      )}
+                      <Button onClick={() => sendToGallery(asset, "videos")} size="sm">
+                        <ArrowUpRight data-icon="inline-start" /> Vidéo
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="absolute top-2 right-2 translate-y-1 opacity-0 transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100" onClick={(event) => event.stopPropagation()}>
                     <DropdownMenu>
                       <DropdownMenuTrigger render={<Button aria-label={`Actions pour ${assetLabel(asset)}`} className="rounded-full bg-background/80 backdrop-blur-sm" size="icon-sm" variant="secondary" />}>
                         <MoreHorizontal />
@@ -511,9 +642,10 @@ export default function AdLibraryPage() {
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
-                </article>
+                </motion.article>
               ))}
-            </div>
+              </AnimatePresence>
+            </motion.div>
           )}
         </section>
       </div>
