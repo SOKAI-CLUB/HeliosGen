@@ -1,5 +1,7 @@
 "use client";
 import React, { useState } from "react";
+import CreditEstimate from "@/components/CreditEstimate";
+import type { CreditEstimate as Estimate } from "@/lib/creditEstimate";
 
 interface Props {
   onClick: () => void;
@@ -7,9 +9,10 @@ interface Props {
   disabled?: boolean;
   extracting?: boolean;
   warningMessages?: string[];
+  estimate?: Estimate;
 }
 
-export default function GenerateButton({ onClick, busy, disabled, extracting, warningMessages }: Props) {
+export default function GenerateButton({ onClick, busy, disabled, extracting, warningMessages, estimate }: Props) {
   const [tooltipVisible, setTooltipVisible] = useState(false);
   const hasWarning = !!(warningMessages?.length);
 
@@ -31,6 +34,11 @@ export default function GenerateButton({ onClick, busy, disabled, extracting, wa
       onMouseEnter={() => hasWarning && setTooltipVisible(true)}
       onMouseLeave={() => setTooltipVisible(false)}
     >
+      {estimate && (
+        <div style={{ position: "absolute", bottom: "calc(100% + 3px)", right: 0 }}>
+          <CreditEstimate estimate={estimate} />
+        </div>
+      )}
       <button
         onMouseDown={(e) => e.stopPropagation()}
         onClick={(e) => { e.stopPropagation(); onClick(); }}

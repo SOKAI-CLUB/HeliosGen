@@ -18,6 +18,9 @@ import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { Button } from "@/components/ui/button";
 import { browserNotify, requestNotificationPermission } from "@/lib/browserNotify";
 import VideoTrimDialog from "@/components/nodes/VideoTrimDialog";
+import CreditEstimate from "@/components/CreditEstimate";
+import { combineCreditEstimates, estimateImageCredits, estimateVideoCredits } from "@/lib/creditEstimate";
+import { useReferenceVideoDurations } from "@/lib/useReferenceVideoDurations";
 import { AddToAdLibraryDialog } from "@/components/ad-library/AddToAdLibraryDialog";
 
 const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
@@ -2740,6 +2743,35 @@ function GalleryInner() {
   // ── Derived ───────────────────────────────────────────────────────────────
 
   const vidModel = VIDEO_MODELS.find(m => m.id === modelId);
+  const estimatePrompts = multiPromptMode ? prompt.split(/\n\n+/).map((text) => text.trim()).filter(Boolean) : [prompt];
+  const creditInputs = estimatePrompts.map((text) => {
+    const { extraAssets } = resolveGalleryMentions(text, taggedImages, vidModel?.resourceTagFormat ?? "default");
+    const extraImages = extraAssets.filter((asset) => asset.kind === "image").map((asset) => asset.url);
+    const extraVideos = extraAssets.filter((asset) => asset.kind === "video").map((asset) => asset.url);
+    const references = isVideo && vidModel?.handles.includes("referenceVideo")
+      ? [...extraVideos.map((url) => ({ url })), ...vidRefVideos.filter((ref) => ref.cdnUrl && !ref.error && !extraVideos.includes(ref.cdnUrl)).map((ref) => ({ ...ref, url: ref.cdnUrl }))]
+      : isVideo && vidModel?.handles.includes("videoRef") && vidVideoRef?.cdnUrl
+        ? [{ ...vidVideoRef, url: vidVideoRef.cdnUrl }]
+        : [];
+    const imageUrls = [...new Set([...extraImages, ...refImages.filter((ref) => ref.cdnUrl && !ref.error).map((ref) => ref.cdnUrl!)])];
+    return { references, referenceImageCount: imageUrls.length, hasResources: extraImages.length > 0 || (!!vidModel?.handles.includes("resource") && vidResources.some((ref) => ref.cdnUrl && !ref.error)) };
+  });
+  const creditVideoDurations = useReferenceVideoDurations(creditInputs.flatMap((input) => input.references));
+  let creditVideoOffset = 0;
+  const creditEstimate = combineCreditEstimates(creditInputs.map((input) => {
+    const referenceVideoDurations = creditVideoDurations.slice(creditVideoOffset, creditVideoOffset + input.references.length);
+    creditVideoOffset += input.references.length;
+    return isVideo ? estimateVideoCredits({
+      model: vidModel, duration, resolution, mode, sound,
+      hasImageInput: !!((vidModel?.handles.includes("startFrame") && vidStartFrame?.cdnUrl) || (vidModel?.handles.includes("endFrame") && vidEndFrame?.cdnUrl)),
+      usesReferences: vidModel?.apiInput.useGoogleVeo ? veoMode === "references" : input.hasResources,
+      referenceVideoDurations,
+    }) : estimateImageCredits({
+      model: imgModel, quality, count: multiPromptMode ? 1 : count,
+      provider: providerId === "codex" ? "codex" : isAzureProvider ? "azure" : "kie",
+      referenceImageCount: input.referenceImageCount,
+    });
+  }));
   const ratios = (isVideo ? vidModel?.ratios : imgModel?.ratios) ?? [];
   const supportsQ = !isVideo && !!imgModel?.supportsQuality;
 
@@ -5008,7 +5040,9 @@ function GalleryInner() {
               </div>{/* end controls group */}
 
               {/* Character count + Generate button */}
-              <div style={{ display: "flex", alignItems: "center", gap: "12px", flexShrink: 0 }}>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px", flexShrink: 0 }}>
+                <CreditEstimate estimate={creditEstimate} />
+                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                 {promptMaxLength !== null && !multiPromptMode && (
                   <div
                     aria-hidden
@@ -5051,6 +5085,7 @@ function GalleryInner() {
                     </KbdGroup>
                   )}
                 </Button>
+                </div>
               </div>
             </div>{/* end bottom row */}
           </div>
