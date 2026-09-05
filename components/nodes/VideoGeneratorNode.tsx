@@ -3,6 +3,8 @@ import React, { useCallback, useEffect, useRef, useState, Fragment } from "react
 import { useAnimatedPopup } from "@/lib/useAnimatedPopup";
 import { createPortal } from "react-dom";
 import GenerateButton from "@/components/nodes/GenerateButton";
+import { estimateVideoCredits } from "@/lib/creditEstimate";
+import { useReferenceVideoDurations } from "@/lib/useReferenceVideoDurations";
 import { Handle, Position, NodeProps, Node, useUpdateNodeInternals } from "@xyflow/react";
 import CornerResizer from "./CornerResizer";
 import NodeActionBar from "./NodeActionBar";
@@ -594,6 +596,25 @@ export default function VideoGeneratorNode({ id, data, selected }: NodeProps<Vid
   });
   const ratios = cfg.ratios;
   const durations = cfg.durations;
+
+  const creditInputs = resolveInputs(id, nodes as Node<NodeData>[], edges);
+  const creditVideoHandle = cfg.apiInput.useMotionControl ? "videoRef" : "referenceVideo";
+  const creditVideoReferences = cfg.handles.includes(creditVideoHandle)
+    ? edges.filter((edge) => edge.target === id && edge.targetHandle === creditVideoHandle)
+      .slice(0, cfg.apiInput.useMotionControl ? 1 : cfg.maxReferenceVideos ?? 3)
+      .flatMap((edge) => {
+        const source = nodes.find((node) => node.id === edge.source)?.data;
+        const url = (source?.videoUrl ?? source?.r2Url) as string | undefined;
+        return source && url ? [{ url, videoDuration: source.videoDuration as number | undefined, trimStart: source.trimStart as number | undefined, trimEnd: source.trimEnd as number | undefined }] : [];
+      })
+    : [];
+  const creditVideoDurations = useReferenceVideoDurations(creditVideoReferences);
+  const creditEstimate = estimateVideoCredits({
+    model: cfg, duration, resolution, mode, sound, count: genCount,
+    hasImageInput: isVeo && veoMode === "references" ? creditInputs.resources.length > 0 : !!(creditInputs.startFrameUrl || creditInputs.endFrameUrl),
+    usesReferences: isVeo ? veoMode === "references" : creditInputs.resources.length > 0,
+    referenceVideoDurations: creditVideoDurations,
+  });
 
   const closeAll = () => {
     setModelOpen(false); setRatioOpen(false); setDurOpen(false);
@@ -2054,7 +2075,7 @@ export default function VideoGeneratorNode({ id, data, selected }: NodeProps<Vid
               )}
 
               {/* Generate button — always right */}
-              {!readOnly && <GenerateButton onClick={handleGenerateBatch} busy={animBusy} extracting={isExtractingFrames} disabled={promptOverLimit || kieKeySet === false || busy || isExtractingFrames || hasFailedMediaInput} warningMessages={hasFailedMediaInput ? ["A connected image/video input has no valid content"] : undefined} />}
+              {!readOnly && <GenerateButton estimate={creditEstimate} onClick={handleGenerateBatch} busy={animBusy} extracting={isExtractingFrames} disabled={promptOverLimit || kieKeySet === false || busy || isExtractingFrames || hasFailedMediaInput} warningMessages={hasFailedMediaInput ? ["A connected image/video input has no valid content"] : undefined} />}
             </div>
           );
         })()}

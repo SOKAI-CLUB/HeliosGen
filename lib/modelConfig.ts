@@ -155,8 +155,7 @@ export const IMAGE_MODELS: ImageModel[] = [
     apiInput: {
       aspectRatioKey: "aspect_ratio",
       imageInputKey: "image_input",
-      qualityKey: "quality",
-      qualityMap: { "1k": "basic", "2k": "basic", "4k": "high" },
+      qualityKey: "resolution",
       qualityOptions: ["1k", "2k", "4k"],
       promptMaxLength: 10000,
       outputFormat: "jpg",
@@ -174,8 +173,7 @@ export const IMAGE_MODELS: ImageModel[] = [
     apiInput: {
       aspectRatioKey: "aspect_ratio",
       imageInputKey: "image_input",
-      qualityKey: "quality",
-      qualityMap: { "1k": "basic", "2k": "basic", "4k": "high" },
+      qualityKey: "resolution",
       qualityOptions: ["1k", "2k", "4k"],
       promptMaxLength: 10000,
       outputFormat: "jpg",

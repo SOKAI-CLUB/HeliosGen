@@ -3,7 +3,7 @@ import { join } from "path";
 import { randomUUID, createHash } from "crypto";
 
 const DATA_DIR = join(process.cwd(), "data");
-const DB_FILE  = join(DATA_DIR, "guest-db.json");
+const DB_FILE = join(DATA_DIR, "guest-db.json");
 
 interface Generation {
   id: string;
@@ -55,6 +55,46 @@ interface FolderItemRecord {
   created_at: string;
 }
 
+export interface AdLibraryFolderRecord {
+  id: string;
+  user_id: string;
+  name: string;
+  parent_id: string | null;
+  order_index: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdLibraryAssetRecord {
+  id: string;
+  user_id: string;
+  folder_id: string | null;
+  source_item_id: string | null;
+  source_type: "generation" | "upload" | "trimmed" | "library_upload";
+  media_type: "image" | "video";
+  url: string;
+  title: string | null;
+  duration: number | null;
+  trim_start: number | null;
+  trim_end: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdLibraryTagRecord {
+  id: string;
+  user_id: string;
+  name: string;
+  created_at: string;
+}
+
+interface AdLibraryAssetTagRecord {
+  asset_id: string;
+  tag_id: string;
+  user_id: string;
+  created_at: string;
+}
+
 interface GuestDb {
   generations: Generation[];
   uploads: Upload[];
@@ -62,6 +102,10 @@ interface GuestDb {
   settings?: { kie_api_token?: string; azure_api_key?: string };
   folders: FolderRecord[];
   folder_items: FolderItemRecord[];
+  ad_library_folders: AdLibraryFolderRecord[];
+  ad_library_assets: AdLibraryAssetRecord[];
+  ad_library_tags: AdLibraryTagRecord[];
+  ad_library_asset_tags: AdLibraryAssetTagRecord[];
 }
 
 function now(): string {
@@ -69,7 +113,17 @@ function now(): string {
 }
 
 function read(): GuestDb {
-  const defaults: GuestDb = { generations: [], uploads: [], assetCache: {}, folders: [], folder_items: [] };
+  const defaults: GuestDb = {
+    generations: [],
+    uploads: [],
+    assetCache: {},
+    folders: [],
+    folder_items: [],
+    ad_library_folders: [],
+    ad_library_assets: [],
+    ad_library_tags: [],
+    ad_library_asset_tags: [],
+  };
   if (!existsSync(DB_FILE)) return defaults;
   try {
     const parsed = JSON.parse(readFileSync(DB_FILE, "utf8")) as Partial<GuestDb>;
@@ -272,5 +326,156 @@ export function deleteFolderItems(folderId: string, itemIds: string[], userId: s
   db.folder_items = db.folder_items.filter(
     (fi) => !(fi.folder_id === folderId && itemIds.includes(fi.item_id) && fi.user_id === userId),
   );
+  write(db);
+}
+
+// ── Ad library ────────────────────────────────────────────────────────────
+
+export function getAdLibraryFolders(userId: string): AdLibraryFolderRecord[] {
+  return read().ad_library_folders
+    .filter((folder) => folder.user_id === userId)
+    .sort((a, b) => a.order_index - b.order_index);
+}
+
+export function insertAdLibraryFolder(
+  data: Omit<AdLibraryFolderRecord, "id" | "created_at" | "updated_at">,
+): AdLibraryFolderRecord {
+  const db = read();
+  const folder: AdLibraryFolderRecord = {
+    ...data,
+    id: randomUUID(),
+    created_at: now(),
+    updated_at: now(),
+  };
+  db.ad_library_folders.push(folder);
+  write(db);
+  return folder;
+}
+
+export function renameAdLibraryFolder(id: string, userId: string, name: string): void {
+  const db = read();
+  const folder = db.ad_library_folders.find((entry) => entry.id === id && entry.user_id === userId);
+  if (!folder) return;
+  folder.name = name;
+  folder.updated_at = now();
+  write(db);
+}
+
+export function deleteAdLibraryFolder(id: string, userId: string): void {
+  const db = read();
+  db.ad_library_folders = db.ad_library_folders.filter(
+    (folder) => !(folder.id === id && folder.user_id === userId),
+  );
+  db.ad_library_folders.forEach((folder) => {
+    if (folder.user_id === userId && folder.parent_id === id) folder.parent_id = null;
+  });
+  db.ad_library_assets.forEach((asset) => {
+    if (asset.user_id === userId && asset.folder_id === id) {
+      asset.folder_id = null;
+      asset.updated_at = now();
+    }
+  });
+  write(db);
+}
+
+export function getAdLibraryAssets(userId: string): AdLibraryAssetRecord[] {
+  return read().ad_library_assets
+    .filter((asset) => asset.user_id === userId)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+}
+
+export function getAdLibraryAssetTags(userId: string): AdLibraryAssetTagRecord[] {
+  return read().ad_library_asset_tags.filter((entry) => entry.user_id === userId);
+}
+
+export function insertAdLibraryAsset(
+  data: Omit<AdLibraryAssetRecord, "id" | "created_at" | "updated_at">,
+): AdLibraryAssetRecord {
+  const db = read();
+  const asset: AdLibraryAssetRecord = {
+    ...data,
+    id: randomUUID(),
+    created_at: now(),
+    updated_at: now(),
+  };
+  db.ad_library_assets.push(asset);
+  write(db);
+  return asset;
+}
+
+export function updateAdLibraryAsset(
+  id: string,
+  userId: string,
+  updates: Partial<Pick<AdLibraryAssetRecord, "folder_id" | "title">>,
+): void {
+  const db = read();
+  const asset = db.ad_library_assets.find((entry) => entry.id === id && entry.user_id === userId);
+  if (!asset) return;
+  Object.assign(asset, updates, { updated_at: now() });
+  write(db);
+}
+
+export function deleteAdLibraryAsset(id: string, userId: string): void {
+  const db = read();
+  db.ad_library_assets = db.ad_library_assets.filter(
+    (asset) => !(asset.id === id && asset.user_id === userId),
+  );
+  db.ad_library_asset_tags = db.ad_library_asset_tags.filter(
+    (entry) => !(entry.asset_id === id && entry.user_id === userId),
+  );
+  write(db);
+}
+
+export function getAdLibraryTags(userId: string): AdLibraryTagRecord[] {
+  return read().ad_library_tags
+    .filter((tag) => tag.user_id === userId)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function insertAdLibraryTag(userId: string, name: string): AdLibraryTagRecord {
+  const db = read();
+  const existing = db.ad_library_tags.find(
+    (tag) => tag.user_id === userId && tag.name.toLocaleLowerCase() === name.toLocaleLowerCase(),
+  );
+  if (existing) return existing;
+  const tag: AdLibraryTagRecord = {
+    id: randomUUID(),
+    user_id: userId,
+    name,
+    created_at: now(),
+  };
+  db.ad_library_tags.push(tag);
+  write(db);
+  return tag;
+}
+
+export function deleteAdLibraryTag(id: string, userId: string): void {
+  const db = read();
+  db.ad_library_tags = db.ad_library_tags.filter(
+    (tag) => !(tag.id === id && tag.user_id === userId),
+  );
+  db.ad_library_asset_tags = db.ad_library_asset_tags.filter(
+    (entry) => !(entry.tag_id === id && entry.user_id === userId),
+  );
+  write(db);
+}
+
+export function setAdLibraryAssetTags(assetId: string, tagIds: string[], userId: string): void {
+  const db = read();
+  const assetExists = db.ad_library_assets.some(
+    (asset) => asset.id === assetId && asset.user_id === userId,
+  );
+  if (!assetExists) return;
+  const validTagIds = new Set(
+    db.ad_library_tags
+      .filter((tag) => tag.user_id === userId && tagIds.includes(tag.id))
+      .map((tag) => tag.id),
+  );
+  db.ad_library_asset_tags = db.ad_library_asset_tags.filter(
+    (entry) => !(entry.asset_id === assetId && entry.user_id === userId),
+  );
+  for (const tagId of validTagIds) {
+    db.ad_library_asset_tags.push({ asset_id: assetId, tag_id: tagId, user_id: userId, created_at: now() });
+  }
   write(db);
 }

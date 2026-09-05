@@ -13,7 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-const MIN_SELECTION_SECONDS = 4.2;
+const DEFAULT_MIN_SELECTION_SECONDS = 4.2;
 const SELECTION_EPSILON_SECONDS = 0.001;
 
 type DragMode = "start" | "end" | "selection";
@@ -32,6 +32,10 @@ interface VideoTrimDialogProps {
   initialStart?: number;
   initialEnd?: number;
   maxDuration?: number;
+  minDuration?: number;
+  title?: string;
+  description?: string;
+  confirmLabel?: string;
   onApply: (startTime: number, endTime: number, duration: number) => void;
   onCancel: (duration: number) => void;
 }
@@ -44,9 +48,10 @@ const initialSelectionFor = (
   initialStart?: number,
   initialEnd?: number,
   maxDuration?: number,
+  minDuration = DEFAULT_MIN_SELECTION_SECONDS,
 ) => {
   if (!duration) return { start: 0, end: 0 };
-  const minimumSelection = Math.min(MIN_SELECTION_SECONDS, duration);
+  const minimumSelection = Math.min(minDuration, duration);
   const safeStart = clamp(initialStart ?? 0, 0, duration - minimumSelection);
   const requestedEnd = initialEnd ?? duration;
   const cappedEnd = maxDuration
@@ -70,10 +75,15 @@ export default function VideoTrimDialog({
   initialStart,
   initialEnd,
   maxDuration,
+  minDuration = DEFAULT_MIN_SELECTION_SECONDS,
+  title = "Trim video",
+  description,
+  confirmLabel = "Keep this passage",
   onApply,
   onCancel,
 }: VideoTrimDialogProps) {
-  const initialSelection = initialSelectionFor(duration, initialStart, initialEnd, maxDuration);
+  const minimumDuration = Math.max(0.1, minDuration);
+  const initialSelection = initialSelectionFor(duration, initialStart, initialEnd, maxDuration, minimumDuration);
   const videoRef = useRef<HTMLVideoElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -88,24 +98,24 @@ export default function VideoTrimDialog({
 
   const resetSelection = useCallback((nextDuration: number) => {
     if (!nextDuration) return;
-    const nextSelection = initialSelectionFor(nextDuration, initialStart, initialEnd, maxDuration);
+    const nextSelection = initialSelectionFor(nextDuration, initialStart, initialEnd, maxDuration, minimumDuration);
     setStartTime(nextSelection.start);
     setEndTime(nextSelection.end);
     setCurrentTime(nextSelection.start);
     startRef.current = nextSelection.start;
     endRef.current = nextSelection.end;
     if (videoRef.current) videoRef.current.currentTime = nextSelection.start;
-  }, [initialEnd, initialStart, maxDuration]);
+  }, [initialEnd, initialStart, maxDuration, minimumDuration]);
 
   const resetToFullSelection = useCallback(() => {
-    const nextSelection = initialSelectionFor(mediaDuration, 0, mediaDuration, maxDuration);
+    const nextSelection = initialSelectionFor(mediaDuration, 0, mediaDuration, maxDuration, minimumDuration);
     setStartTime(nextSelection.start);
     setEndTime(nextSelection.end);
     setCurrentTime(nextSelection.start);
     startRef.current = nextSelection.start;
     endRef.current = nextSelection.end;
     if (videoRef.current) videoRef.current.currentTime = nextSelection.start;
-  }, [maxDuration, mediaDuration]);
+  }, [maxDuration, mediaDuration, minimumDuration]);
 
   const seekPreview = useCallback((time: number) => {
     const video = videoRef.current;
@@ -147,7 +157,7 @@ export default function VideoTrimDialog({
     const drag = dragRef.current;
     const timeline = timelineRef.current;
     if (!drag || !timeline || !mediaDuration) return;
-    const minimumSelection = Math.min(MIN_SELECTION_SECONDS, mediaDuration);
+    const minimumSelection = Math.min(minimumDuration, mediaDuration);
 
     if (drag.mode === "selection") {
       const selectionDuration = drag.initialEnd - drag.initialStart;
@@ -168,7 +178,7 @@ export default function VideoTrimDialog({
     let nextEnd = clamp(pointerTime, startRef.current + minimumSelection, mediaDuration);
     if (maxDuration) nextEnd = Math.min(nextEnd, startRef.current + maxDuration);
     updateSelection(startRef.current, nextEnd, Math.max(startRef.current, nextEnd - 0.04));
-  }, [maxDuration, mediaDuration, timeAtPointer, updateSelection]);
+  }, [maxDuration, mediaDuration, minimumDuration, timeAtPointer, updateSelection]);
 
   const endDrag = useCallback(() => {
     dragRef.current = null;
@@ -179,7 +189,7 @@ export default function VideoTrimDialog({
     event.preventDefault();
     const direction = event.key === "ArrowRight" ? 1 : -1;
     const step = event.shiftKey ? 1 : 0.1;
-    const minimumSelection = Math.min(MIN_SELECTION_SECONDS, mediaDuration);
+    const minimumSelection = Math.min(minimumDuration, mediaDuration);
 
     if (mode === "start") {
       let nextStart = clamp(startRef.current + direction * step, 0, endRef.current - minimumSelection);
@@ -191,7 +201,7 @@ export default function VideoTrimDialog({
     let nextEnd = clamp(endRef.current + direction * step, startRef.current + minimumSelection, mediaDuration);
     if (maxDuration) nextEnd = Math.min(nextEnd, startRef.current + maxDuration);
     updateSelection(startRef.current, nextEnd, Math.max(startRef.current, nextEnd - 0.04));
-  }, [maxDuration, mediaDuration, updateSelection]);
+  }, [maxDuration, mediaDuration, minimumDuration, updateSelection]);
 
   const togglePlayback = useCallback(() => {
     const video = videoRef.current;
@@ -207,8 +217,8 @@ export default function VideoTrimDialog({
   }, []);
 
   const selectionDuration = Math.max(0, endTime - startTime);
-  const hasMinimumSelection = selectionDuration + SELECTION_EPSILON_SECONDS >= MIN_SELECTION_SECONDS;
-  const sourceTooShort = mediaDuration > 0 && mediaDuration + SELECTION_EPSILON_SECONDS < MIN_SELECTION_SECONDS;
+  const hasMinimumSelection = selectionDuration + SELECTION_EPSILON_SECONDS >= Math.min(minimumDuration, mediaDuration);
+  const sourceTooShort = mediaDuration > 0 && mediaDuration + SELECTION_EPSILON_SECONDS < minimumDuration;
   const startPercent = mediaDuration ? (startTime / mediaDuration) * 100 : 0;
   const endPercent = mediaDuration ? (endTime / mediaDuration) * 100 : 100;
   const currentPercent = mediaDuration ? (currentTime / mediaDuration) * 100 : 0;
@@ -222,10 +232,10 @@ export default function VideoTrimDialog({
         <DialogHeader className="px-5 pt-5 pr-14 sm:px-6 sm:pt-6 sm:pr-16">
           <DialogTitle className="flex items-center gap-2 text-lg">
             <Scissors />
-            Trim video
+            {title}
           </DialogTitle>
           <DialogDescription>
-            Keep at least {MIN_SELECTION_SECONDS} seconds. Drag the start and end handles to select the passage sent to the model.
+            {description ?? `Keep at least ${minimumDuration} seconds. Drag the start and end handles to select the passage sent to the model.`}
           </DialogDescription>
         </DialogHeader>
 
@@ -319,7 +329,7 @@ export default function VideoTrimDialog({
 
               <button
                 aria-label="Selection start"
-                aria-valuemax={Math.max(0, endTime - Math.min(MIN_SELECTION_SECONDS, mediaDuration))}
+                aria-valuemax={Math.max(0, endTime - Math.min(minimumDuration, mediaDuration))}
                 aria-valuemin={0}
                 aria-valuenow={startTime}
                 className="absolute inset-y-0 w-5 -translate-x-1/2 cursor-ew-resize rounded-md border-2 border-primary bg-primary shadow-md outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
@@ -335,7 +345,7 @@ export default function VideoTrimDialog({
               <button
                 aria-label="Selection end"
                 aria-valuemax={mediaDuration}
-                aria-valuemin={Math.min(mediaDuration, startTime + Math.min(MIN_SELECTION_SECONDS, mediaDuration))}
+                aria-valuemin={Math.min(mediaDuration, startTime + Math.min(minimumDuration, mediaDuration))}
                 aria-valuenow={endTime}
                 className="absolute inset-y-0 w-5 -translate-x-1/2 cursor-ew-resize rounded-md border-2 border-primary bg-primary shadow-md outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
                 role="slider"
@@ -357,8 +367,8 @@ export default function VideoTrimDialog({
               <span>Drag the handles • drag the selected area to move it</span>
               <span>
                 {sourceTooShort
-                  ? `Source too short • ${MIN_SELECTION_SECONDS}s required`
-                  : `${MIN_SELECTION_SECONDS}s minimum${maxDuration ? ` • ${maxDuration}s maximum` : ""}`}
+                  ? `Source too short • ${minimumDuration}s required`
+                  : `${minimumDuration}s minimum${maxDuration ? ` • ${maxDuration}s maximum` : ""}`}
               </span>
             </div>
           </div>
@@ -381,7 +391,7 @@ export default function VideoTrimDialog({
             }}
           >
             <Scissors data-icon="inline-start" />
-            Keep this passage
+            {confirmLabel}
           </Button>
         </DialogFooter>
       </DialogContent>

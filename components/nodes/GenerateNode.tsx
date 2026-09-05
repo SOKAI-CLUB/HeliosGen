@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState, Fragment } from "react";
 import { useAnimatedPopup } from "@/lib/useAnimatedPopup";
 import { createPortal } from "react-dom";
 import GenerateButton from "@/components/nodes/GenerateButton";
+import { estimateImageCredits } from "@/lib/creditEstimate";
 import Image from "next/image";
 import { Handle, Position, NodeProps, Node, useUpdateNodeInternals } from "@xyflow/react";
 import CornerResizer from "./CornerResizer";
@@ -393,6 +394,13 @@ export default function GenerateNode({ id, data, selected }: NodeProps<GenerateN
   }, [model]);
   const isAzureProvider = currentProvider === "azure";
   const isCodexProvider = currentProvider === "codex";
+  const creditEstimate = estimateImageCredits({
+    model: IMAGE_MODELS.find((entry) => entry.id === model),
+    quality,
+    count: genCount,
+    provider: currentProvider,
+    referenceImageCount: resolveInputs(id, nodes as Node<NodeData>[], edges).imageUrls.length,
+  });
 
   const promptInfo = (() => {
     const promptEdge = edges.find((e) => e.target === id && e.targetHandle === "prompt");
@@ -1441,7 +1449,7 @@ export default function GenerateNode({ id, data, selected }: NodeProps<GenerateN
           )}
 
           {/* Generate button — always right */}
-          {!readOnly && <GenerateButton onClick={handleGenerateBatch} busy={animBusy} disabled={promptOverLimit || (!isCodexProvider && kieKeySet === false) || busy || hasFailedImageInput} warningMessages={hasFailedImageInput ? ["The connected image input has no valid content"] : undefined} />}
+          {!readOnly && <GenerateButton estimate={creditEstimate} onClick={handleGenerateBatch} busy={animBusy} disabled={promptOverLimit || (!isCodexProvider && kieKeySet === false) || busy || hasFailedImageInput} warningMessages={hasFailedImageInput ? ["The connected image input has no valid content"] : undefined} />}
         </div>
       </div>
 
@@ -1607,4 +1615,3 @@ function NodeProviderIcon({ provider }: { provider: string }) {
       return null;
   }
 }
-
