@@ -3,6 +3,7 @@ import AuthModal from "@/components/AuthModal";
 import ResetPasswordModal from "@/components/ResetPasswordModal";
 import SettingsModal from "@/components/SettingsModal";
 import Toaster from "@/components/Toaster";
+import VideoTextRemovalManager from "@/components/VideoTextRemovalManager";
 import { useWorkflowStore } from "@/lib/store";
 
 export default function GlobalModals() {
@@ -15,6 +16,7 @@ export default function GlobalModals() {
       <ResetPasswordModal />
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
       <Toaster />
+      <VideoTextRemovalManager />
     </>
   );
 }

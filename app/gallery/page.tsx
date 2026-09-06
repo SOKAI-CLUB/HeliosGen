@@ -7,7 +7,8 @@ import { IMAGE_MODELS, VIDEO_MODELS, AZURE_POPULAR_SIZES, validateAzureCustomSiz
 import { PROVIDERS, getModelProvider, setModelProvider, modelHasProviderChoice } from "@/lib/providers";
 import { useWorkflowStore } from "@/lib/store";
 import type { User } from "@supabase/supabase-js";
-import { Library, Maximize2, Minimize2, Scissors, ShieldAlert, X } from "lucide-react";
+import { CaptionsOff, Library, Maximize2, Minimize2, Scissors, ShieldAlert, X } from "lucide-react";
+import { openVideoTextRemoval } from "@/lib/videoTextRemovalStore";
 import { GalleryItem, getToken, galleryCache } from "@/lib/galleryUtils";
 import { useFolderStore } from "@/lib/folderStore";
 import { MediaPickerModal } from "@/components/MediaPickerModal";
@@ -1683,6 +1684,12 @@ function GalleryInner() {
 
   // When sourceFilter changes, reset to page 0 and fetch only the relevant source.
   useEffect(() => {
+    const refresh = () => { void loadItems(tabRef.current, 0, true); };
+    window.addEventListener("gallery-updated", refresh);
+    return () => window.removeEventListener("gallery-updated", refresh);
+  }, [loadItems]);
+
+  useEffect(() => {
     sourceFilterRef.current = sourceFilter;
     if (DEMO_MODE) return;
     pageRef.current = 0;
@@ -3327,6 +3334,9 @@ function GalleryInner() {
       }}>
         {/* Left: source tabs */}
         <div style={{ display: "flex", gap: "2px" }}>
+          {isVideo && <Button size="sm" variant="outline" onClick={() => openVideoTextRemoval()} aria-label="Supprimer les sous-titres d’une vidéo" title="Supprimer les sous-titres">
+            <CaptionsOff data-icon="inline-start" /><span className="hidden sm:inline">Supprimer les sous-titres</span>
+          </Button>}
           {(["generated", "uploaded"] as const).map(src => (
             <button
               key={src}
@@ -4204,7 +4214,7 @@ function GalleryInner() {
                         <div key={r.id} onMouseDown={e => e.preventDefault()} onPointerDown={e => { if (!isMultiTarget || listForSlot.length <= 1 || r.uploading || r.error) return; _reorderDragItem = { id: r.id, listTarget: slot.target as "resource"|"referenceVideo"|"audioRef" }; _reorderOverId = null; setDraggingId(r.id); }} onPointerEnter={() => { if (!_reorderDragItem || _reorderDragItem.id === r.id || _reorderDragItem.listTarget !== slot.target) return; _reorderOverId = r.id; setReorderOverId(r.id); }} onPointerUp={e => { const info = _reorderDragItem; if (!info || info.listTarget !== slot.target) return; e.stopPropagation(); if (_reorderOverId) e.preventDefault(); const target = _reorderOverId ?? r.id; handleReorderDrop(target, slot.target as "resource"|"referenceVideo"|"audioRef"); }} onMouseEnter={() => { if (!draggingId) setHoveredRefId(hovId); }} onMouseLeave={() => setHoveredRefId(null)} onDragOver={e => { if (slot.mediaKind === "audio" || !e.dataTransfer.types.includes("application/x-gallery-item")) return; e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = "copy"; setDragOverSlotKey(dragKey); }} onDragLeave={() => setDragOverSlotKey(null)} onDrop={e => { if (slot.mediaKind !== "audio") handleGalleryItemDrop(e, slot.target as any, slot.mediaKind as "image" | "video"); }} style={{ position: "relative", width: "64px", height: "64px", borderRadius: "8px", overflow: "hidden", flexShrink: 0, background: "#1a1c1f", touchAction: (isMultiTarget && listForSlot.length > 1) ? "none" : undefined, transition: "border 120ms, box-shadow 120ms, opacity 120ms", border: r.error ? "1px solid rgba(248,113,113,0.4)" : dragOverSlotKey === dragKey ? "2.5px solid #2DD4BF" : taggedImages.some(t => t.refId === r.id) ? "2.5px solid #10b981" : "1px solid rgba(255,255,255,0.12)", boxShadow: dragOverSlotKey === dragKey ? "0 0 0 3px rgba(45,212,191,0.25)" : undefined, opacity: isSlotDragging ? 0.3 : undefined, cursor: (isMultiTarget && listForSlot.length > 1 && !r.uploading && !r.error) ? (draggingId === r.id ? "grabbing" : "grab") : undefined }}>
                           {slot.mediaKind === "image" ? <img src={thumbSrc(r.objectUrl, snapWidth(64))} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} /> : slot.mediaKind === "video" ? <video src={r.objectUrl} autoPlay muted loop playsInline style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(255,255,255,0.04)" }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>}
                           {hoveredRefId === hovId && !r.uploading && !r.error && slot.mediaKind !== "audio" && (
-                            <div onClick={() => { if (_reorderJustDropped || draggingId) { _reorderJustDropped = false; return; } if (modelId === "seedance-2-5-edit" && slot.target === "referenceVideo") setVideoTrimTarget(r); else setRefPreview({ url: r.objectUrl, mediaKind: slot.mediaKind }); }} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.35)", display: "flex", alignItems: "center", justifyContent: "center", cursor: modelId === "seedance-2-5-edit" && slot.target === "referenceVideo" ? "pointer" : "zoom-in", zIndex: 1 }}>{modelId === "seedance-2-5-edit" && slot.target === "referenceVideo" ? <Scissors size={15} /> : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>}</div>
+                            <div onClick={() => { if (_reorderJustDropped || draggingId) { _reorderJustDropped = false; return; } if (modelId === "seedance-2-5-edit" && slot.target === "referenceVideo") setVideoTrimTarget(r); else setRefPreview({ url: r.cdnUrl || r.objectUrl, mediaKind: slot.mediaKind }); }} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.35)", display: "flex", alignItems: "center", justifyContent: "center", cursor: modelId === "seedance-2-5-edit" && slot.target === "referenceVideo" ? "pointer" : "zoom-in", zIndex: 1 }}>{modelId === "seedance-2-5-edit" && slot.target === "referenceVideo" ? <Scissors size={15} /> : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>}</div>
                           )}
                           <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "8px 4px 3px", background: "linear-gradient(to top, rgba(0,0,0,0.8) 0%, transparent 100%)", textAlign: "center" }}><span style={{ fontSize: "8px", fontWeight: 700, letterSpacing: "0.04em", color: "rgba(255,255,255,0.85)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block", padding: "0 4px" }}>{r.trimStart !== undefined && r.trimEnd !== undefined ? `${(r.trimEnd - r.trimStart).toFixed(1)}S CLIP` : slot.label.toUpperCase()}</span></div>
                           <button onClick={() => removeVidRef(r.id, slot.target)} style={{ position: "absolute", top: "3px", right: "3px", width: "16px", height: "16px", borderRadius: "50%", background: "rgba(0,0,0,0.7)", border: "1px solid rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.85)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, transition: "background 120ms", zIndex: 2 }}><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
@@ -5216,6 +5226,7 @@ function GalleryInner() {
             thumbUrl={lightboxThumb}
             onClose={() => setLightboxItem(null)}
             onCopyPrompt={handleCopyPrompt}
+            onRemoveSubtitles={() => { setLightboxItem(null); openVideoTextRemoval({ url: lightboxItem.url }); }}
             onPrev={idx > 0 ? () => {
               const prev = orderedGalleryItems[idx - 1];
               setLightboxItem(prev);
@@ -5266,6 +5277,11 @@ function GalleryInner() {
                 alt=""
                 style={{ display: "block", maxWidth: "90vw", maxHeight: "90vh", objectFit: "contain" }}
               />
+            )}
+            {refPreview.mediaKind === "video" && !refPreview.url.startsWith("blob:") && (
+              <Button className="absolute bottom-3 left-3" variant="secondary" onClick={() => { const url = refPreview.url; setRefPreview(null); openVideoTextRemoval({ url }); }}>
+                <CaptionsOff data-icon="inline-start" /> Supprimer les sous-titres
+              </Button>
             )}
             <button
               onClick={() => setRefPreview(null)}
@@ -6714,6 +6730,7 @@ function GalleryCard({
             )}
           </button>
         )}
+        {isVideo && <button className="gallery-action-btn" title="Supprimer les sous-titres" aria-label="Supprimer les sous-titres" onClick={(event) => { event.stopPropagation(); videoRef.current?.pause(); openVideoTextRemoval({ url: item.url }); }}><CaptionsOff size={12} /></button>}
         <button
           className="gallery-action-btn"
           title={downloading ? "Downloading…" : "Download"}
@@ -7055,7 +7072,7 @@ function renderLightboxPrompt(
 
 // ── Lightbox ──────────────────────────────────────────────────────────────────
 
-function Lightbox({ item, thumbUrl, onClose, onCopyPrompt, onPrev, onNext }: { item: GalleryItem; thumbUrl?: string; onClose: () => void; onCopyPrompt?: (prompt: string, refUrls?: string[], meta?: { model?: string; aspectRatio?: string; quality?: string; azureResolution?: string }) => void; onPrev?: () => void; onNext?: () => void }) {
+function Lightbox({ item, thumbUrl, onClose, onCopyPrompt, onRemoveSubtitles, onPrev, onNext }: { item: GalleryItem; thumbUrl?: string; onClose: () => void; onCopyPrompt?: (prompt: string, refUrls?: string[], meta?: { model?: string; aspectRatio?: string; quality?: string; azureResolution?: string }) => void; onRemoveSubtitles?: () => void; onPrev?: () => void; onNext?: () => void }) {
   const [visible, setVisible] = useState(false);
   const [fullLoaded, setFullLoaded] = useState(false);
   const [imgIdx, setImgIdx] = useState(0);
@@ -7380,6 +7397,7 @@ function Lightbox({ item, thumbUrl, onClose, onCopyPrompt, onPrev, onNext }: { i
         </div>
 
         {/* Download button */}
+        {isVideo && <Button variant="outline" onClick={onRemoveSubtitles}><CaptionsOff data-icon="inline-start" /> Supprimer les sous-titres</Button>}
         <button
           onClick={download}
           disabled={downloading}

@@ -1,5 +1,26 @@
 @import "tailwindcss";
 
+/* Shared semantic colors used by the shadcn dialogs, controls and media library. */
+@theme inline {
+  --color-background: #0B0E14;
+  --color-foreground: #FFFFFF;
+  --color-card: #141820;
+  --color-card-foreground: #FFFFFF;
+  --color-popover: #141820;
+  --color-popover-foreground: #FFFFFF;
+  --color-primary: #2DD4BF;
+  --color-primary-foreground: #0B0E14;
+  --color-secondary: #202733;
+  --color-secondary-foreground: #FFFFFF;
+  --color-muted: #1A202A;
+  --color-muted-foreground: #A0AAB8;
+  --color-accent: #24333C;
+  --color-accent-foreground: #FFFFFF;
+  --color-destructive: #F87171;
+  --color-border: #FFFFFF1A;
+  --color-input: #FFFFFF26;
+  --color-ring: #2DD4BF;
+}
 
 /* ── Base ─────────────────────────────────────────────── */
 html,

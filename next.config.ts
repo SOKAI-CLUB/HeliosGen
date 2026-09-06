@@ -6,7 +6,7 @@ const nextConfig: NextConfig = {
     root: process.cwd(),
   },
   experimental: {
-    proxyClientMaxBodySize: '30mb',
+    proxyClientMaxBodySize: '105mb',
   },
   serverExternalPackages: ["undici"],
   images: {

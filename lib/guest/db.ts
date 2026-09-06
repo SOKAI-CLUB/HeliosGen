@@ -143,10 +143,10 @@ export function hashBuffer(buf: Buffer): string {
 
 // ── Generations ────────────────────────────────────────────────────────────
 
-export function insertGeneration(data: Omit<Generation, "id" | "created_at" | "updated_at">): void {
+export function insertGeneration(data: Omit<Generation, "id" | "created_at" | "updated_at"> & { id?: string }): void {
   const db = read();
   if (db.generations.some((g) => g.task_id === data.task_id)) return;
-  db.generations.push({ ...data, id: randomUUID(), created_at: now(), updated_at: now() });
+  db.generations.push({ ...data, id: data.id ?? randomUUID(), created_at: now(), updated_at: now() });
   write(db);
 }
 
@@ -165,6 +165,22 @@ export function recoverJob(
   taskId: string,
 ): Pick<Generation, "status" | "video_url" | "image_url" | "image_urls" | "error_msg"> | null {
   return read().generations.find((g) => g.task_id === taskId) ?? null;
+}
+
+export function getTextRemovalJob(id: string, userId?: string): Generation | null {
+  return read().generations.find((g) => g.id === id && g.model === "hjunior29/video-text-remover" && (!userId || g.user_id === userId)) ?? null;
+}
+
+export function getPendingTextRemovalJobs(userId: string): Generation[] {
+  return read().generations.filter((g) => g.user_id === userId && g.model === "hjunior29/video-text-remover" && g.status === "pending").slice(-20);
+}
+
+export function updateTextRemovalJob(id: string, updates: Partial<Pick<Generation, "status" | "task_id" | "video_url" | "error_msg">>): void {
+  const db = read();
+  const generation = db.generations.find((g) => g.id === id && g.model === "hjunior29/video-text-remover");
+  if (!generation) throw new Error("Text removal job not found");
+  Object.assign(generation, updates, { updated_at: now() });
+  write(db);
 }
 
 export function getGenerations(userId: string, type: "image" | "video"): Generation[] {

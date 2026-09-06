@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   ArrowUpRight,
+  CaptionsOff,
   Check,
   Download,
   Film,
@@ -59,6 +60,7 @@ import {
   type AdLibraryData,
 } from "@/lib/adLibrary";
 import { getToken } from "@/lib/galleryUtils";
+import { openVideoTextRemoval } from "@/lib/videoTextRemovalStore";
 
 type MediaFilter = "all" | "video" | "image";
 type FolderSelection = "all" | "unfiled" | string;
@@ -625,6 +627,7 @@ export default function AdLibraryPage() {
                         <DropdownMenuGroup>
                           <DropdownMenuItem onClick={() => beginEditAsset(asset)}><Pencil /> Modifier</DropdownMenuItem>
                           <DropdownMenuItem onClick={() => downloadAsset(asset)}><Download /> Télécharger</DropdownMenuItem>
+                          {asset.mediaType === "video" && <DropdownMenuItem onClick={() => openVideoTextRemoval({ url: asset.url, title: assetLabel(asset) })}><CaptionsOff /> Supprimer les sous-titres</DropdownMenuItem>}
                         </DropdownMenuGroup>
                         <DropdownMenuSeparator />
                         <DropdownMenuGroup>
@@ -776,7 +779,8 @@ export default function AdLibraryPage() {
                 <h3 className="truncate font-medium">{assetLabel(previewAsset)}</h3>
                 <p className="text-sm text-muted-foreground">{previewAsset.mediaType === "video" ? "Vidéo" : "Image"}{formatDuration(previewAsset.duration) ? ` · ${formatDuration(previewAsset.duration)}` : ""}</p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
+                {previewAsset.mediaType === "video" && <Button variant="outline" onClick={() => { const asset = previewAsset; setPreviewAsset(null); openVideoTextRemoval({ url: asset.url, title: assetLabel(asset) }); }}><CaptionsOff data-icon="inline-start" /> Supprimer les sous-titres</Button>}
                 <Button onClick={() => { beginEditAsset(previewAsset); setPreviewAsset(null); }} variant="outline"><Pencil data-icon="inline-start" /> Modifier</Button>
                 <Button onClick={() => downloadAsset(previewAsset)}><Download data-icon="inline-start" /> Télécharger</Button>
               </div>

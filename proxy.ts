@@ -35,6 +35,6 @@ export async function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     // Skip Next.js internals, static files, and server-to-server API routes
-    "/((?!_next/static|_next/image|favicon.ico|api/callback|api/health|api/upload-to-r2).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/callback|api/remove-video-text/callback|api/health|api/upload-to-r2).*)",
   ],
 };

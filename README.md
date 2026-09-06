@@ -312,6 +312,38 @@ origin and configure the same origin as the Supabase Auth Site URL.
 
 ---
 
+# Subtitle removal (Replicate)
+
+Use **Supprimer les sous-titres** from the Videos tab (including uploads), a
+video preview, an imported workflow video, or the advertising library's video
+actions. You can also choose a new video directly from the Videos toolbar
+(maximum 100 MB).
+
+Set `REPLICATE_API_TOKEN` in the Railway service's production variables, or in
+`.env.local` for development. The token stays on the server. Without it, the
+interface explains that configuration is required and does not submit jobs.
+
+The integration uses
+[hjunior29/video-text-remover](https://replicate.com/hjunior29/video-text-remover),
+pinned to version `247c8385f3c6c322110a6787bd2d257acc3a3d60b9ed7da1726a628f72a42c4d`,
+with hybrid inpainting and the model's recommended defaults. It removes
+burned-in text; other visible text may also be removed. Results depend on the
+video and must be reviewed in the before/after preview.
+
+`CALLBACK_BASE_URL` must be the public HTTPS application origin. Signed
+completion callbacks save results even after the browser closes; authenticated
+polling also recovers pending jobs when the app reopens. Jobs use the existing
+`generations` table, so this feature does not need a database migration. The
+original is preserved and the processed MP4 is copied from Replicate to R2
+before it is marked complete in the Videos gallery. It can then be downloaded,
+added to the advertising library, or applied to its source workflow node.
+
+Run `pnpm test:subtitles` on Node 22+ for the provider contract and workflow
+tests. These tests use simulated Replicate responses and isolated local storage;
+they do not spend API credits. A real model run requires a configured token.
+
+---
+
 # 🤝 Contributions
 
 Contributions are welcome.

@@ -8,6 +8,10 @@ import { VIDEO_MODELS } from "@/lib/modelConfig";
 import { createClient } from "@/lib/supabase/client";
 import { sha256Hex } from "@/lib/assetHash";
 import VideoTrimDialog from "./VideoTrimDialog";
+import { CaptionsOff } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { openVideoTextRemoval } from "@/lib/videoTextRemovalStore";
+import { useReadOnly } from "@/lib/readOnlyContext";
 
 type VideoInputNodeType = Node<NodeData, "videoInputNode">;
 
@@ -34,6 +38,7 @@ const VIDEO_SOURCE_HANDLE_SPACING = 32; // px between source handles
 const videoSourceHandleCenterOffset = (i: number) => (i - (VIDEO_SOURCE_HANDLES.length - 1) / 2) * VIDEO_SOURCE_HANDLE_SPACING;
 
 export default function VideoInputNode({ id, data, selected }: NodeProps<VideoInputNodeType>) {
+  const readOnly = useReadOnly();
   const updateNodeData  = useWorkflowStore((s) => s.updateNodeData);
   const edges           = useWorkflowStore((s) => s.edges);
   const nodes           = useWorkflowStore((s) => s.nodes);
@@ -923,6 +928,20 @@ export default function VideoInputNode({ id, data, selected }: NodeProps<VideoIn
               )}
 
               {/* Trim button — only in video mode */}
+              {!readOnly && !isUploading && videoUrl && viewMode === "video" && <Button
+                size="icon-sm" variant="secondary" className="absolute right-11 bottom-2 pointer-events-auto nodrag nopan"
+                title="Supprimer les sous-titres" aria-label="Supprimer les sous-titres"
+                onMouseDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation(); videoRef.current?.pause();
+                  openVideoTextRemoval({ url: videoUrl, onUse: (url) => {
+                    // Do not overwrite a node that was replaced while the job was running.
+                    const current = useWorkflowStore.getState().nodes.find((node) => node.id === id);
+                    if (current?.data.videoUrl !== videoUrl) return;
+                    updateNodeData(id, { videoUrl: url, capturedFrameUrl: undefined, eagerStartFrameUrl: undefined, eagerEndFrameUrl: undefined, trimmedVideoUrl: undefined, trimmedVideoSourceUrl: undefined });
+                  } });
+                }}
+              ><CaptionsOff /></Button>}
               {!isUploading && viewMode === "video" && (
                 <button
                   onMouseDown={(e) => e.stopPropagation()}
