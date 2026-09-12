@@ -22,6 +22,59 @@
   --color-ring: #2DD4BF;
 }
 
+/* Advertising library: distinct work surfaces, matching the workflow canvas. */
+.ad-library-header {
+  background: linear-gradient(120deg, var(--color-card), var(--color-background) 70%);
+}
+.ad-library-header > .pointer-events-none:has(canvas) {
+  opacity: 0.32;
+  mask-image: linear-gradient(to right, transparent 25%, black);
+}
+.ad-library-grid {
+  background: radial-gradient(ellipse at 95% 0%, color-mix(in srgb, var(--color-primary) 4%, transparent), transparent 55%), var(--color-background);
+}
+.ad-library aside [aria-current="page"] {
+  box-shadow: inset 3px 0 var(--color-primary);
+  color: var(--color-primary);
+}
+.ad-review-stage {
+  background: radial-gradient(ellipse at center, var(--color-card), var(--color-background) 80%);
+}
+.ad-review-scrubber {
+  height: 18px;
+}
+.ad-review-scrubber:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 3px;
+}
+.ad-review-marker:hover {
+  z-index: 1;
+  transform: translateY(-2px);
+}
+@media (max-width: 1023px) {
+  .ad-review-layout {
+    grid-template-rows: minmax(210px, 42%) minmax(0, 1fr);
+  }
+  .ad-review-layout > div > footer {
+    display: none;
+  }
+  .ad-review-layout aside > div:first-child {
+    gap: 6px;
+    padding: 10px 14px;
+  }
+  .ad-review-layout form {
+    gap: 8px;
+    padding: 10px 14px;
+  }
+  .ad-review-layout textarea {
+    min-height: 58px;
+    max-height: 72px;
+  }
+  .ad-review-layout form > p:last-child {
+    display: none;
+  }
+}
+
 /* ── Base ─────────────────────────────────────────────── */
 html,
 body,

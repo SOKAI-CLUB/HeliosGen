@@ -1,4 +1,5 @@
 import { getToken } from "@/lib/galleryUtils";
+import type { AdLibraryReview, ReviewMutation } from "@/lib/adLibraryReview";
 
 export type AdLibraryMediaType = "image" | "video";
 
@@ -97,4 +98,16 @@ export async function mutateAdLibrary<T = AdLibraryData>(mutation: AdLibraryMuta
     body: JSON.stringify(mutation),
   });
   return parseResponse<T>(response);
+}
+
+export async function fetchAdLibraryReview(assetId: string, signal?: AbortSignal): Promise<AdLibraryReview> {
+  return parseResponse<AdLibraryReview>(await fetch(`/api/ad-library/comments?assetId=${encodeURIComponent(assetId)}`, {
+    headers: await authHeaders(), cache: "no-store", signal,
+  }));
+}
+
+export async function mutateAdLibraryReview(assetId: string, mutation: ReviewMutation): Promise<void> {
+  await parseResponse(await fetch("/api/ad-library/comments", {
+    method: "POST", headers: await authHeaders(), body: JSON.stringify({ assetId, ...mutation }),
+  }));
 }

@@ -15,6 +15,7 @@ import {
   Image as ImageIcon,
   Library,
   MoreHorizontal,
+  MessageSquare,
   Pencil,
   Play,
   Plus,
@@ -61,6 +62,8 @@ import {
 } from "@/lib/adLibrary";
 import { getToken } from "@/lib/galleryUtils";
 import { openVideoTextRemoval } from "@/lib/videoTextRemovalStore";
+import AssetReviewDialog from "@/components/ad-library/AssetReviewDialog";
+import WorkflowDotBackground from "@/components/ui/WorkflowDotBackground";
 
 type MediaFilter = "all" | "video" | "image";
 type FolderSelection = "all" | "unfiled" | string;
@@ -102,6 +105,7 @@ export default function AdLibraryPage() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [mediaFilter, setMediaFilter] = useState<MediaFilter>("all");
+  const [sortOrder, setSortOrder] = useState("recent");
   const [selectedFolderId, setSelectedFolderId] = useState<FolderSelection>("all");
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [folderDialog, setFolderDialog] = useState<{ mode: "create" | "rename"; folderId?: string; value: string } | null>(null);
@@ -157,8 +161,12 @@ export default function AdLibraryPage() {
         .map((tag) => tag.name)
         .join(" ");
       return `${assetLabel(asset)} ${tagNames}`.toLocaleLowerCase().includes(normalizedSearch);
-    });
-  }, [library.assets, library.tags, mediaFilter, search, selectedFolderId, selectedTagIds]);
+    }).sort((a, b) => sortOrder === "name" ? assetLabel(a).localeCompare(assetLabel(b), "fr")
+      : sortOrder === "oldest" ? a.createdAt.localeCompare(b.createdAt) : b.createdAt.localeCompare(a.createdAt));
+  }, [library.assets, library.tags, mediaFilter, search, selectedFolderId, selectedTagIds, sortOrder]);
+
+  const hasFilters = Boolean(search.trim() || selectedTagIds.length || mediaFilter !== "all");
+  const resetFilters = () => { setSearch(""); setSelectedTagIds([]); setMediaFilter("all"); };
 
   const selectedFolderName = selectedFolderId === "all"
     ? "Tous les médias"
@@ -295,8 +303,9 @@ export default function AdLibraryPage() {
   };
 
   return (
-    <main className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
-      <header className="relative overflow-hidden border-b bg-muted/10 px-5 py-5 lg:px-7 lg:py-6">
+    <main className="ad-library flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
+      <header className="ad-library-header relative shrink-0 overflow-hidden border-b border-border px-5 py-5 lg:px-7 lg:py-6">
+        <WorkflowDotBackground />
         <motion.div
           aria-hidden="true"
           className="pointer-events-none absolute -top-24 right-12 size-64 rounded-full bg-primary/10 blur-3xl"
@@ -311,7 +320,7 @@ export default function AdLibraryPage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
             >
-              <Badge className="mb-1" variant="outline">
+              <Badge className="mb-1 w-fit" variant="secondary">
                 <UsersRound data-icon="inline-start" />
                 Bibliothèque partagée
               </Badge>
@@ -321,7 +330,7 @@ export default function AdLibraryPage() {
                 </div>
                 <h1 className="text-2xl font-semibold tracking-tight lg:text-3xl">Bibliothèque publicitaire</h1>
               </div>
-              <p className="text-sm leading-relaxed text-muted-foreground">Centralisez les rushs de l’équipe, classez-les et réutilisez-les dans vos prochaines créations.</p>
+              <p className="text-sm leading-relaxed text-muted-foreground">Vos créations, le regard de l’équipe. Organisez vos médias et échangez sur chaque passage.</p>
               <div className="flex flex-wrap items-center gap-2 pt-1">
                 <Badge variant="secondary"><Film data-icon="inline-start" /> {library.assets.length} média{library.assets.length > 1 ? "s" : ""}</Badge>
                 <Badge variant="secondary"><Video data-icon="inline-start" /> {videoCount} vidéo{videoCount > 1 ? "s" : ""}</Badge>
@@ -355,7 +364,7 @@ export default function AdLibraryPage() {
           </div>
 
           <motion.div
-            className="flex flex-wrap items-center gap-2 rounded-2xl border bg-background/75 p-2 shadow-sm backdrop-blur-xl"
+            className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card p-3 shadow-sm"
             initial={prefersReducedMotion ? false : { opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: prefersReducedMotion ? 0 : 0.12, duration: 0.4 }}
@@ -367,7 +376,8 @@ export default function AdLibraryPage() {
             <ToggleGroup
               value={[mediaFilter]}
               onValueChange={(values) => setMediaFilter((values[0] as MediaFilter | undefined) ?? "all")}
-              variant="outline"
+              aria-label="Type de média"
+              variant="selection"
               spacing={0}
             >
               <ToggleGroupItem value="all">Tous</ToggleGroupItem>
@@ -383,7 +393,7 @@ export default function AdLibraryPage() {
           <AnimatePresence initial={false}>
             {library.tags.length > 0 && (
               <motion.div
-                className="flex items-center gap-2 overflow-x-auto pb-0.5"
+                className="flex items-center gap-2 overflow-x-auto pb-1"
                 initial={prefersReducedMotion ? false : { opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: "auto" }}
                 exit={prefersReducedMotion ? undefined : { opacity: 0, height: 0 }}
@@ -394,10 +404,14 @@ export default function AdLibraryPage() {
                   multiple
                   value={selectedTagIds}
                   onValueChange={setSelectedTagIds}
-                  variant="outline"
+                  aria-label="Filtrer par tags : tous les tags sélectionnés doivent correspondre"
+                  variant="selection"
                   size="sm"
                 >
-                  {library.tags.map((tag) => <ToggleGroupItem key={tag.id} value={tag.id}>{tag.name}</ToggleGroupItem>)}
+                  {library.tags.map((tag) => <ToggleGroupItem key={tag.id} value={tag.id}>
+                    {selectedTagIds.includes(tag.id) ? <Check data-icon="inline-start" /> : <Tag data-icon="inline-start" />}{tag.name}
+                    <span className="ml-1 text-xs tabular-nums">{library.assets.filter((asset) => asset.tagIds.includes(tag.id)).length}</span>
+                  </ToggleGroupItem>)}
                 </ToggleGroup>
                 {selectedTagIds.length > 0 && (
                   <Button onClick={() => setSelectedTagIds([])} size="sm" variant="ghost"><X data-icon="inline-start" /> Effacer</Button>
@@ -423,18 +437,18 @@ export default function AdLibraryPage() {
       </AnimatePresence>
 
       <div className="flex min-h-0 flex-1">
-        <aside className="hidden w-60 shrink-0 flex-col border-r bg-muted/10 md:flex">
+        <aside className="hidden w-56 shrink-0 flex-col border-r border-border bg-card md:flex">
           <div className="flex items-center justify-between px-3 py-4">
             <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Dossiers</span>
             <Button aria-label="Créer un dossier" onClick={() => setFolderDialog({ mode: "create", value: "" })} size="icon-sm" variant="ghost"><Plus /></Button>
           </div>
           <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 pb-3">
-            <Button className="justify-start" onClick={() => setSelectedFolderId("all")} variant={selectedFolderId === "all" ? "secondary" : "ghost"}>
+            <Button className="justify-start" aria-current={selectedFolderId === "all" ? "page" : undefined} onClick={() => setSelectedFolderId("all")} variant={selectedFolderId === "all" ? "secondary" : "ghost"}>
               <Library data-icon="inline-start" />
               Tous les médias
               <span className="ml-auto text-xs text-muted-foreground">{library.assets.length}</span>
             </Button>
-            <Button className="justify-start" onClick={() => setSelectedFolderId("unfiled")} variant={selectedFolderId === "unfiled" ? "secondary" : "ghost"}>
+            <Button className="justify-start" aria-current={selectedFolderId === "unfiled" ? "page" : undefined} onClick={() => setSelectedFolderId("unfiled")} variant={selectedFolderId === "unfiled" ? "secondary" : "ghost"}>
               <FolderOpen data-icon="inline-start" />
               Sans dossier
               <span className="ml-auto text-xs text-muted-foreground">{library.assets.filter((asset) => asset.folderId === null).length}</span>
@@ -450,13 +464,13 @@ export default function AdLibraryPage() {
                   initial={prefersReducedMotion ? false : { opacity: 0, x: -8 }}
                   animate={{ opacity: 1, x: 0 }}
                 >
-                  <Button className="min-w-0 flex-1 justify-start" onClick={() => setSelectedFolderId(folder.id)} variant={active ? "secondary" : "ghost"}>
+                  <Button className="min-w-0 flex-1 justify-start" aria-current={active ? "page" : undefined} onClick={() => setSelectedFolderId(folder.id)} variant={active ? "secondary" : "ghost"}>
                     <Folder data-icon="inline-start" />
                     <span className="truncate">{folder.name}</span>
                     <span className="ml-auto text-xs text-muted-foreground">{library.assets.filter((asset) => asset.folderId === folder.id).length}</span>
                   </Button>
                   <DropdownMenu>
-                    <DropdownMenuTrigger render={<Button aria-label={`Actions pour ${folder.name}`} className="opacity-0 group-hover:opacity-100" size="icon-sm" variant="ghost" />}>
+                    <DropdownMenuTrigger render={<Button aria-label={`Actions pour ${folder.name}`} size="icon-sm" variant="ghost" />}>
                       <MoreHorizontal />
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
@@ -475,14 +489,20 @@ export default function AdLibraryPage() {
           </div>
         </aside>
 
-        <section className="min-w-0 flex-1 overflow-y-auto bg-gradient-to-b from-muted/10 to-background px-4 py-5 lg:px-6">
+        <section className="ad-library-grid min-w-0 flex-1 overflow-y-auto px-4 py-5 lg:px-6">
           <motion.div
             className="mb-5 flex flex-wrap items-center justify-between gap-2"
             layout={!prefersReducedMotion}
           >
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2"><h2 className="text-lg font-semibold tracking-tight">{selectedFolderName}</h2><Badge variant="secondary">{visibleAssets.length}</Badge></div>
+              <p role="status" className="text-xs text-muted-foreground">{hasFilters ? `${visibleAssets.length} résultat${visibleAssets.length > 1 ? "s" : ""} · ${selectedTagIds.length > 1 ? "Tous les tags sélectionnés doivent correspondre" : "Filtres actifs"}` : "Ouvrez un média pour le visionner et partager vos retours."}</p>
+            </div>
             <div className="flex items-center gap-2">
-              <h2 className="text-lg font-semibold tracking-tight">{selectedFolderName}</h2>
-              <Badge variant="secondary">{visibleAssets.length}</Badge>
+              {hasFilters && <Button size="sm" variant="outline" onClick={resetFilters}><X data-icon="inline-start" />Réinitialiser les filtres</Button>}
+              <select aria-label="Trier les médias" value={sortOrder} onChange={(event) => setSortOrder(event.target.value)} className="h-8 rounded-lg border border-input bg-card px-2 text-xs">
+                <option value="recent">Plus récents</option><option value="oldest">Plus anciens</option><option value="name">Nom : A → Z</option>
+              </select>
             </div>
             <div className="flex items-center gap-2 md:hidden">
               <label className="sr-only" htmlFor="mobile-library-folder">Dossier</label>
@@ -524,11 +544,11 @@ export default function AdLibraryPage() {
                       : "Essayez un autre dossier, retirez un filtre ou modifiez votre recherche."}
                   </EmptyDescription>
                 </EmptyHeader>
-                {library.assets.length === 0 && (
+                {library.assets.length === 0 ? (
                   <EmptyContent>
                     <Button onClick={() => fileInputRef.current?.click()}><Upload data-icon="inline-start" /> Importer des rushs</Button>
                   </EmptyContent>
-                )}
+                ) : <EmptyContent><Button variant="outline" onClick={() => { resetFilters(); setSelectedFolderId("all"); }}>Afficher tous les médias</Button></EmptyContent>}
               </Empty>
             </motion.div>
           ) : (
@@ -536,13 +556,13 @@ export default function AdLibraryPage() {
               <AnimatePresence initial={!prefersReducedMotion} mode="popLayout">
               {visibleAssets.map((asset, index) => (
                 <motion.article
-                  className="group relative aspect-video cursor-pointer overflow-hidden rounded-2xl border bg-muted shadow-sm outline-none transition-[box-shadow,border-color] duration-300 hover:border-ring/40 hover:shadow-xl focus-visible:ring-3 focus-visible:ring-ring/50"
+                  className="group relative overflow-hidden rounded-xl border border-border bg-card shadow-sm transition-[box-shadow,border-color] duration-200 hover:border-ring/50 hover:shadow-lg"
                   key={asset.id}
                   layout={!prefersReducedMotion}
                   initial={prefersReducedMotion ? false : { opacity: 0, y: 16, scale: 0.98 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={prefersReducedMotion ? undefined : { opacity: 0, scale: 0.96 }}
-                  whileHover={prefersReducedMotion ? undefined : { y: -5 }}
+                  whileHover={prefersReducedMotion ? undefined : { y: -2 }}
                   transition={{
                     delay: prefersReducedMotion ? 0 : Math.min(index, 10) * 0.03,
                     duration: 0.4,
@@ -560,67 +580,39 @@ export default function AdLibraryPage() {
                     }
                   }}
                 >
-                  {asset.mediaType === "video" ? (
-                    <video className="size-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.04]" src={asset.url} muted loop playsInline preload="metadata" />
-                  ) : (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img className="size-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.04]" src={asset.url} alt={assetLabel(asset)} loading="lazy" />
-                  )}
-
-                  <button
-                    aria-label={`Ouvrir l’aperçu de ${assetLabel(asset)}`}
-                    className="absolute inset-0 rounded-2xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-                    onClick={() => setPreviewAsset(asset)}
-                    type="button"
-                  />
-
-                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-background via-background/10 to-transparent opacity-90 transition-opacity duration-500 group-hover:opacity-70" />
-
-                  <div className="pointer-events-none absolute top-2 left-2 flex items-center gap-1.5">
-                    <Badge className="backdrop-blur-md" variant="secondary">
-                      {asset.mediaType === "video" ? <Video data-icon="inline-start" /> : <ImageIcon data-icon="inline-start" />}
-                      {asset.mediaType === "video" ? "Vidéo" : "Image"}
-                    </Badge>
-                    {formatDuration(asset.duration) && <Badge className="backdrop-blur-md" variant="outline">{formatDuration(asset.duration)}</Badge>}
-                  </div>
-
-                  {asset.mediaType === "video" && (
-                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                      <span className="flex size-11 items-center justify-center rounded-full bg-background/80 shadow-lg backdrop-blur-md transition-all duration-300 group-hover:scale-125 group-hover:opacity-0">
-                        <Play className="fill-current" />
-                      </span>
-                    </div>
-                  )}
-
-                  <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col gap-2 p-3 transition-all duration-300 group-hover:translate-y-2 group-hover:opacity-0 group-focus-within:translate-y-2 group-focus-within:opacity-0">
-                    <div className="min-w-0">
-                      <h3 className="truncate text-sm font-medium">{assetLabel(asset)}</h3>
-                    </div>
-                    {asset.tagIds.length > 0 && (
-                      <div className="flex min-w-0 gap-1 overflow-hidden">
-                        {library.tags.filter((tag) => asset.tagIds.includes(tag.id)).slice(0, 3).map((tag) => <Badge key={tag.id} variant="secondary">{tag.name}</Badge>)}
-                        {asset.tagIds.length > 3 && <Badge variant="outline">+{asset.tagIds.length - 3}</Badge>}
-                      </div>
+                  <div className="relative aspect-video overflow-hidden bg-background">
+                    {asset.mediaType === "video" ? (
+                      <video className="size-full object-cover" src={asset.url} muted loop playsInline preload="metadata" />
+                    ) : (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img className="size-full object-cover" src={asset.url} alt={assetLabel(asset)} loading="lazy" />
                     )}
+                    <button aria-label={`Ouvrir l’aperçu de ${assetLabel(asset)}`} className="absolute inset-0 outline-none focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring"
+                      onClick={() => setPreviewAsset(asset)} type="button" />
+                    <div className="pointer-events-none absolute top-2 left-2 flex items-center gap-1.5">
+                      <Badge variant="secondary">{asset.mediaType === "video" ? <Video data-icon="inline-start" /> : <ImageIcon data-icon="inline-start" />}{asset.mediaType === "video" ? "Vidéo" : "Image"}</Badge>
+                      {formatDuration(asset.duration) && <Badge variant="secondary">{formatDuration(asset.duration)}</Badge>}
+                    </div>
+                    {asset.mediaType === "video" && <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                      <span className="flex size-11 items-center justify-center rounded-full border border-foreground/20 bg-background/75 text-foreground shadow-lg backdrop-blur-sm transition-transform group-hover:scale-110"><Play className="size-4 fill-current" /></span>
+                    </div>}
                   </div>
-
-                  <div className="absolute inset-x-3 bottom-3 flex translate-y-2 items-center justify-between gap-2 opacity-0 transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100" onClick={(event) => event.stopPropagation()}>
-                    <Button onClick={() => setPreviewAsset(asset)} size="sm" variant="secondary">
-                      <Play data-icon="inline-start" /> Aperçu
-                    </Button>
-                    <div className="flex items-center gap-1">
-                      {asset.mediaType === "image" && (
-                        <Button aria-label="Utiliser dans Image" onClick={() => sendToGallery(asset, "images")} size="icon-sm" variant="secondary"><ImageIcon /></Button>
-                      )}
-                      <Button onClick={() => sendToGallery(asset, "videos")} size="sm">
-                        <ArrowUpRight data-icon="inline-start" /> Vidéo
-                      </Button>
+                  <div className="flex flex-col gap-3 p-3.5">
+                    <button type="button" className="truncate text-left text-sm font-semibold outline-none hover:text-primary focus-visible:text-primary" onClick={() => setPreviewAsset(asset)}>{assetLabel(asset)}</button>
+                    <div className="flex min-h-5 flex-wrap gap-1.5">
+                      {asset.tagIds.length ? <>
+                        {library.tags.filter((tag) => asset.tagIds.includes(tag.id)).slice(0, 3).map((tag) => <Badge key={tag.id} variant={selectedTagIds.includes(tag.id) ? "default" : "secondary"}>{tag.name}</Badge>)}
+                        {asset.tagIds.length > 3 && <Badge variant="outline">+{asset.tagIds.length - 3}</Badge>}
+                      </> : <button type="button" className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary" onClick={() => beginEditAsset(asset)}><Plus className="size-3" />Ajouter des tags</button>}
+                    </div>
+                    <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
+                      <Button onClick={() => setPreviewAsset(asset)} size="sm" variant="secondary"><MessageSquare data-icon="inline-start" />Ouvrir la revue</Button>
+                      <Button aria-label="Utiliser dans Vidéo" title="Utiliser dans Vidéo" onClick={() => sendToGallery(asset, "videos")} size="icon-sm" variant="ghost"><ArrowUpRight /></Button>
                     </div>
                   </div>
-
-                  <div className="absolute top-2 right-2 translate-y-1 opacity-0 transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100" onClick={(event) => event.stopPropagation()}>
+                  <div className="absolute top-2 right-2">
                     <DropdownMenu>
-                      <DropdownMenuTrigger render={<Button aria-label={`Actions pour ${assetLabel(asset)}`} className="rounded-full bg-background/80 backdrop-blur-sm" size="icon-sm" variant="secondary" />}>
+                      <DropdownMenuTrigger render={<Button aria-label={`Actions pour ${assetLabel(asset)}`} className="rounded-full" size="icon-sm" variant="secondary" />}>
                         <MoreHorizontal />
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
@@ -745,8 +737,8 @@ export default function AdLibraryPage() {
               {library.tags.length === 0 ? (
                 <Button onClick={() => setTagDialogOpen(true)} variant="outline"><Tag data-icon="inline-start" /> Créer un premier tag</Button>
               ) : (
-                <ToggleGroup className="flex w-full flex-wrap justify-start" multiple value={editTagIds} onValueChange={setEditTagIds} variant="outline">
-                  {library.tags.map((tag) => <ToggleGroupItem key={tag.id} value={tag.id}><Tag data-icon="inline-start" /> {tag.name}</ToggleGroupItem>)}
+                <ToggleGroup className="flex w-full flex-wrap justify-start" aria-label="Tags attribués au média" multiple value={editTagIds} onValueChange={setEditTagIds} variant="selection">
+                  {library.tags.map((tag) => <ToggleGroupItem key={tag.id} value={tag.id}>{editTagIds.includes(tag.id) ? <Check data-icon="inline-start" /> : <Tag data-icon="inline-start" />} {tag.name}</ToggleGroupItem>)}
                 </ToggleGroup>
               )}
             </FieldSet>
@@ -758,36 +750,16 @@ export default function AdLibraryPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(previewAsset)} onOpenChange={(open) => { if (!open) setPreviewAsset(null); }}>
-        <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto p-0 sm:max-w-5xl" showCloseButton={false}>
-          <DialogHeader className="sr-only">
-            <DialogTitle>{previewAsset ? assetLabel(previewAsset) : "Aperçu du média"}</DialogTitle>
-            <DialogDescription>Aperçu grand format du média sélectionné.</DialogDescription>
-          </DialogHeader>
-          <div className="relative flex max-h-[75vh] min-h-64 items-center justify-center overflow-hidden rounded-t-xl bg-muted">
-            {previewAsset?.mediaType === "video" ? (
-              <video className="max-h-[75vh] w-full object-contain" src={previewAsset.url} controls autoPlay playsInline />
-            ) : previewAsset ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img className="max-h-[75vh] w-full object-contain" src={previewAsset.url} alt={assetLabel(previewAsset)} />
-            ) : null}
-            <Button aria-label="Fermer l’aperçu" className="absolute top-3 right-3 rounded-full bg-background/80 backdrop-blur-sm" onClick={() => setPreviewAsset(null)} size="icon" variant="secondary"><X /></Button>
-          </div>
-          {previewAsset && (
-            <div className="flex flex-wrap items-center justify-between gap-3 px-4 pb-4">
-              <div className="min-w-0">
-                <h3 className="truncate font-medium">{assetLabel(previewAsset)}</h3>
-                <p className="text-sm text-muted-foreground">{previewAsset.mediaType === "video" ? "Vidéo" : "Image"}{formatDuration(previewAsset.duration) ? ` · ${formatDuration(previewAsset.duration)}` : ""}</p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {previewAsset.mediaType === "video" && <Button variant="outline" onClick={() => { const asset = previewAsset; setPreviewAsset(null); openVideoTextRemoval({ url: asset.url, title: assetLabel(asset) }); }}><CaptionsOff data-icon="inline-start" /> Supprimer les sous-titres</Button>}
-                <Button onClick={() => { beginEditAsset(previewAsset); setPreviewAsset(null); }} variant="outline"><Pencil data-icon="inline-start" /> Modifier</Button>
-                <Button onClick={() => downloadAsset(previewAsset)}><Download data-icon="inline-start" /> Télécharger</Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      {previewAsset && <AssetReviewDialog
+        key={previewAsset.id}
+        asset={previewAsset}
+        title={assetLabel(previewAsset)}
+        tags={library.tags.filter((tag) => previewAsset.tagIds.includes(tag.id))}
+        onClose={() => setPreviewAsset(null)}
+        onDownload={() => downloadAsset(previewAsset)}
+        onEdit={() => { beginEditAsset(previewAsset); setPreviewAsset(null); }}
+        onRemoveSubtitles={() => { openVideoTextRemoval({ url: previewAsset.url, title: assetLabel(previewAsset) }); setPreviewAsset(null); }}
+      />}
     </main>
   );
 }

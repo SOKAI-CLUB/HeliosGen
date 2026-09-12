@@ -12,6 +12,8 @@
     "start": "next start -p ${PORT:-3000}",
     "lint": "eslint",
     "test:credits": "node --experimental-strip-types --test tests/creditEstimate.test.mjs",
+    "test:workflow": "node --test tests/workflowInput.test.mjs",
+    "test:ad-library": "node --experimental-strip-types --test tests/adLibraryReview.test.mjs",
     "test:subtitles": "node --experimental-strip-types --test tests/videoTextRemoval*.test.mjs"
   },
   "dependencies": {

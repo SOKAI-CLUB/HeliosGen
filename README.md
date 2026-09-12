@@ -366,3 +366,23 @@ MIT License
 <p align="center">
   Built for creators building the future of AI workflows.
 </p>
+
+
+### Advertising library review
+
+Open a media card in `/ad-library` to review it with the team. Video feedback
+captures the playback position when writing begins; clicking a timecode or timeline
+marker seeks to that point. Timecodes display centiseconds, independent of source
+frame rate. Comments support replies, resolution/reopening, and deletion by their
+author. All authenticated accounts share the library and its discussions.
+Open reviews refresh every five seconds and when the window regains focus.
+
+Apply `supabase/migrations/20260912000000_ad_library_comments.sql` after the existing
+advertising library migrations, before deploying the new review API. This adds
+`public.ad_library_comments` with cascading asset/thread cleanup. Authenticated
+clients have read access; writes go through `/api/ad-library/comments`, which
+verifies the session, authorship, parent asset and timecode. Guest mode persists
+comments in the existing local guest database and does not require the migration.
+
+Run `pnpm test:ad-library` with Node.js 22+ to check timecodes, shared discussions,
+author permissions, replies, persistence and deletion cascades.

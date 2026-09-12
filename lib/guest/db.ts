@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import { join } from "path";
 import { randomUUID, createHash } from "crypto";
+import type { AdLibraryComment } from "../adLibraryReview";
 
 const DATA_DIR = join(process.cwd(), "data");
 const DB_FILE = join(DATA_DIR, "guest-db.json");
@@ -106,6 +107,7 @@ interface GuestDb {
   ad_library_assets: AdLibraryAssetRecord[];
   ad_library_tags: AdLibraryTagRecord[];
   ad_library_asset_tags: AdLibraryAssetTagRecord[];
+  ad_library_comments: AdLibraryComment[];
 }
 
 function now(): string {
@@ -123,6 +125,7 @@ function read(): GuestDb {
     ad_library_assets: [],
     ad_library_tags: [],
     ad_library_asset_tags: [],
+    ad_library_comments: [],
   };
   if (!existsSync(DB_FILE)) return defaults;
   try {
@@ -433,12 +436,40 @@ export function updateAdLibraryAsset(
 
 export function deleteAdLibraryAsset(id: string, userId: string): void {
   const db = read();
+  if (!db.ad_library_assets.some((asset) => asset.id === id && asset.user_id === userId)) return;
+  db.ad_library_comments = db.ad_library_comments.filter((comment) => comment.assetId !== id);
   db.ad_library_assets = db.ad_library_assets.filter(
     (asset) => !(asset.id === id && asset.user_id === userId),
   );
   db.ad_library_asset_tags = db.ad_library_asset_tags.filter(
     (entry) => !(entry.asset_id === id && entry.user_id === userId),
   );
+  write(db);
+}
+
+export function getAdLibraryComments(assetId: string): AdLibraryComment[] {
+  return read().ad_library_comments.filter((comment) => comment.assetId === assetId)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+}
+
+export function insertAdLibraryComment(comment: Omit<AdLibraryComment, "id" | "createdAt" | "updatedAt">): void {
+  const db = read();
+  db.ad_library_comments.push({ ...comment, id: randomUUID(), createdAt: now(), updatedAt: now() });
+  write(db);
+}
+
+export function resolveAdLibraryComment(id: string, assetId: string, resolved: boolean): void {
+  const db = read();
+  const comment = db.ad_library_comments.find((entry) => entry.id === id && entry.assetId === assetId && !entry.parentId);
+  if (!comment) return;
+  Object.assign(comment, { resolved, updatedAt: now() });
+  write(db);
+}
+
+export function deleteAdLibraryComment(id: string, assetId: string, userId: string): void {
+  const db = read();
+  if (!db.ad_library_comments.some((entry) => entry.id === id && entry.assetId === assetId && entry.authorId === userId)) return;
+  db.ad_library_comments = db.ad_library_comments.filter((entry) => entry.id !== id && entry.parentId !== id);
   write(db);
 }
 
