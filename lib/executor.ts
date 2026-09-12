@@ -1,5 +1,6 @@
-import { Node, Edge } from "@xyflow/react";
-import { NodeData } from "./store";
+import type { Node, Edge } from "@xyflow/react";
+import type { NodeData } from "./store";
+import { getDownstreamNodeIds } from "./workflowGraph";
 
 /** Topological sort — returns node ids in execution order */
 export function topoSort(nodes: Node<NodeData>[], edges: Edge[]): string[] {
@@ -11,6 +12,7 @@ export function topoSort(nodes: Node<NodeData>[], edges: Edge[]): string[] {
     inDegree[n.id] = 0;
   }
   for (const e of edges) {
+    if (!adj[e.source] || !adj[e.target]) continue;
     adj[e.source].push(e.target);
     inDegree[e.target] = (inDegree[e.target] || 0) + 1;
   }
@@ -42,13 +44,16 @@ export function buildPipelineWaves(nodes: Node<NodeData>[], edges: Edge[]): stri
   );
   if (genIds.size === 0) return [];
 
-  // Only edges between gen nodes affect ordering
+  // Follow intermediate nodes as well as direct generator connections.
   const deps = new Map<string, Set<string>>();
   for (const id of genIds) deps.set(id, new Set());
-  for (const e of edges) {
-    if (genIds.has(e.source) && genIds.has(e.target)) {
-      deps.get(e.target)!.add(e.source);
+  for (const id of genIds) {
+    const downstream = new Set(getDownstreamNodeIds(id, edges));
+    for (const target of downstream) {
+      if (genIds.has(target)) deps.get(target)!.add(id);
     }
+    // Include cycles that return to the root through an intermediate node.
+    if (edges.some(e => e.target === id && (e.source === id || downstream.has(e.source)))) deps.get(id)!.add(id);
   }
 
   const waves: string[][] = [];
@@ -78,10 +83,13 @@ function resolveVideoNodeFrameUrl(src: Node<NodeData>, sourceHandle: string | nu
 /** Resolves the image URL for a connection, always honouring the source handle.
  *  Frame-specific handles (startFrameOut / endFrameOut / imagePickOut) return only
  *  their designated frame — no fallback to unrelated image fields. */
-function resolveImageUrl(src: Node<NodeData>, sourceHandle: string | null | undefined): string | undefined {
+export function resolveImageUrl(src: Node<NodeData>, sourceHandle?: string | null): string | undefined {
   if (FRAME_OUT_HANDLES.has(sourceHandle ?? "")) {
     return resolveVideoNodeFrameUrl(src, sourceHandle);
   }
+  // A generator's selected output is authoritative. Template r2Url values can
+  // still point to the example image after a new generation or history change.
+  if (src.type === "generateNode") return src.data.imageUrl;
   return (resolveVideoNodeFrameUrl(src, sourceHandle)
     ?? src.data.capturedFrameUrl
     ?? src.data.r2Url

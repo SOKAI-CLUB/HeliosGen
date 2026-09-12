@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useWorkflowStore } from "./store";
 import { buildPipelineWaves } from "./executor";
+import { getPipelineWaveStatus, isNodeBusy } from "./workflowGraph";
 
 interface PipelineState {
+  spaceId: string;
   waves: string[][];
   waveIdx: number;
   waveStarted: boolean;
@@ -10,100 +12,79 @@ interface PipelineState {
 
 export function usePipelineRunner(scopeNodeIds?: string[]) {
   const nodes = useWorkflowStore(s => s.nodes);
-  const updateNodeData = useWorkflowStore(s => s.updateNodeData);
-
+  const activeSpaceId = useWorkflowStore(s => s.activeSpaceId);
   const [pipeline, setPipeline] = useState<PipelineState | null>(null);
-  const waveEverActive = useRef(false);
   const scopeRef = useRef(scopeNodeIds);
-  scopeRef.current = scopeNodeIds;
+  useEffect(() => { scopeRef.current = scopeNodeIds; }, [scopeNodeIds]);
+  const ownedRun = useRef<PipelineState | null>(null);
 
-  const isRunning = pipeline !== null;
+  const scopedNodes = scopeNodeIds ? nodes.filter(n => scopeNodeIds.includes(n.id)) : nodes;
+  const genNodeCount = scopedNodes.filter(n => n.type === "generateNode" || n.type === "videoGeneratorNode").length;
 
-  const scopedNodes = scopeNodeIds
-    ? nodes.filter(n => scopeNodeIds.includes(n.id))
-    : nodes;
-
-  const genNodeCount = scopedNodes.filter(
-    n => n.type === "generateNode" || n.type === "videoGeneratorNode"
-  ).length;
+  const finish = useCallback((failed = false) => {
+    const run = ownedRun.current;
+    if (!run) return;
+    ownedRun.current = null;
+    const store = useWorkflowStore.getState();
+    if (store.activeSpaceId === run.spaceId) {
+      for (const id of run.waves.flat()) {
+        store.updateNodeData(id, { pipelineQueued: false, pendingGenerate: false });
+      }
+      if (failed) store.addToast("Workflow interrompu : une étape a échoué ou a été annulée. Corrigez-la puis relancez.", "error");
+    } else {
+      const ids = new Set(run.waves.flat());
+      useWorkflowStore.setState(s => ({ spaces: s.spaces.map(space => space.id === run.spaceId ? {
+        ...space, nodes: space.nodes.map(node => ids.has(node.id) ? {
+          ...node, data: { ...node.data, pipelineQueued: false, pendingGenerate: false, pipelineStarting: false },
+        } : node),
+      } : space) }));
+    }
+    store.setIsRunning(false);
+    setPipeline(null);
+  }, []);
 
   const run = useCallback(() => {
-    const { nodes, edges } = useWorkflowStore.getState();
+    const store = useWorkflowStore.getState();
+    if (store.isRunning || ownedRun.current || store.nodes.some(isNodeBusy)) return;
     const scope = scopeRef.current;
-    const filteredNodes = scope ? nodes.filter(n => scope.includes(n.id)) : nodes;
-    const waves = buildPipelineWaves(filteredNodes, edges);
-    if (waves.length === 0) return;
-
-    // Mark future-wave nodes as queued so they show a waiting indicator
-    for (let i = 1; i < waves.length; i++) {
-      for (const id of waves[i]) {
-        updateNodeData(id, { pipelineQueued: true });
-      }
+    const filtered = scope ? store.nodes.filter(n => scope.includes(n.id)) : store.nodes;
+    const waves = buildPipelineWaves(filtered, store.edges);
+    const count = filtered.filter(n => n.type === "generateNode" || n.type === "videoGeneratorNode").length;
+    if (waves.flat().length !== count) {
+      store.addToast("Le workflow contient une boucle. Retirez la connexion circulaire avant de relancer.", "error");
+      return;
     }
+    if (!waves.length) return;
+    const next = { spaceId: store.activeSpaceId, waves, waveIdx: 0, waveStarted: false };
+    ownedRun.current = next;
+    store.setIsRunning(true);
+    for (const id of waves.flat()) store.updateNodeData(id, { pipelineQueued: true });
+    setPipeline(next);
+  }, []);
 
-    waveEverActive.current = false;
-    setPipeline({ waves, waveIdx: 0, waveStarted: false });
-  }, [updateNodeData]);
-
-  // Clear any leftover queued flags when the pipeline ends (e.g. early error)
-  useEffect(() => {
-    if (pipeline !== null) return;
-    const { nodes } = useWorkflowStore.getState();
-    const scope = scopeRef.current;
-    const scoped = scope ? nodes.filter(n => scope.includes(n.id)) : nodes;
-    for (const node of scoped) {
-      if (node.data.pipelineQueued) updateNodeData(node.id, { pipelineQueued: false });
-    }
-  }, [pipeline, updateNodeData]);
+  useEffect(() => () => finish(), [finish]);
 
   useEffect(() => {
     if (!pipeline) return;
+    if (activeSpaceId !== pipeline.spaceId) { finish(); return; }
     const { waves, waveIdx, waveStarted } = pipeline;
     const currentWave = waves[waveIdx];
-
-    // Trigger the wave
     if (!waveStarted) {
-      waveEverActive.current = false;
+      const store = useWorkflowStore.getState();
       for (const id of currentWave) {
-        updateNodeData(id, { pendingGenerate: true });
+        store.updateNodeData(id, { pendingGenerate: true, pipelineQueued: false, status: "idle", errorMsg: undefined, hasError: false });
       }
+      // Advance this controller after dispatching a wave to the external store.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setPipeline(p => p ? { ...p, waveStarted: true } : null);
       return;
     }
+    const status = getPipelineWaveStatus(nodes, currentWave);
+    if (status === "waiting") return;
+    if (status === "error") { finish(true); return; }
+    if (waveIdx + 1 === waves.length) { finish(); return; }
+    setPipeline({ ...pipeline, waveIdx: waveIdx + 1, waveStarted: false });
+  }, [nodes, activeSpaceId, pipeline, finish]);
 
-    // Only mark the wave as "ever active" once a node actually reaches
-    // status "pending" or "running" — NOT merely on pendingGenerate being set.
-    // This prevents a race where pendingGenerate is cleared before generate()
-    // sets status:"pending", causing the runner to think the wave is already done.
-    const anyActive = currentWave.some(id => {
-      const node = nodes.find(n => n.id === id);
-      return node?.data?.status === "pending" || node?.data?.status === "running";
-    });
-    if (anyActive) waveEverActive.current = true;
-
-    // Don't check completion until the wave has actually started
-    if (!waveEverActive.current) return;
-
-    const allDone = currentWave.every(id => {
-      const node = nodes.find(n => n.id === id);
-      if (!node) return true;
-      return !node.data.pendingGenerate && node.data.status !== "pending" && node.data.status !== "running";
-    });
-
-    if (!allDone) return;
-
-    // Advance to next wave or finish
-    const nextIdx = waveIdx + 1;
-    if (nextIdx >= waves.length) {
-      setPipeline(null);
-    } else {
-      waveEverActive.current = false;
-      for (const id of waves[nextIdx]) {
-        updateNodeData(id, { pendingGenerate: true, pipelineQueued: false });
-      }
-      setPipeline({ waves, waveIdx: nextIdx, waveStarted: true });
-    }
-  }, [nodes, pipeline, updateNodeData]);
-
-  return { run, isRunning, genNodeCount };
+  return { run, isRunning: pipeline !== null, genNodeCount };
 }
