@@ -14,6 +14,7 @@ if (typeof window !== "undefined" && process.env.NEXT_PUBLIC_GUEST_MODE !== "tru
 }
 import { edgeStyle } from "./edgeStyles";
 import { VIDEO_MODELS } from "./modelConfig";
+import { getDownstreamNodeIds, invalidateOutputs, isNodeBusy } from "./workflowGraph";
 import {
   Node,
   Edge,
@@ -214,6 +215,7 @@ interface WorkflowStore {
   remapTargetHandle:    (nodeId: string, fromHandle: string, toHandle: string) => void;
   flashEdgeError:       (edgeId: string) => void;
   updateNodeData:     (id: string, data: Partial<NodeData>) => void;
+  replaceInputImage:  (id: string, url: string, naturalRatio: string) => boolean;
   updateNodeSize:     (id: string, width: number, height: number) => void;
   setIsRunning:       (v: boolean) => void;
   toggleDebug:        () => void;
@@ -545,10 +547,39 @@ export const useWorkflowStore = create<WorkflowStore>()(
           setTimeout(() => setError(false), 1400);
         },
 
+        replaceInputImage: (id, url, naturalRatio) => {
+          let replaced = false;
+          set((s) => {
+            const source = s.nodes.find(n => n.id === id && n.type === "imageInputNode");
+            if (!source || !url || url.startsWith("blob:") || s.isRunning) return {};
+            const downstream = new Set(getDownstreamNodeIds(id, s.edges));
+            if (s.nodes.some(n => (n.id === id || downstream.has(n.id)) && isNodeBusy(n))) return {};
+            const nodes = s.nodes.map(n => n.id === id ? {
+              ...n, data: { ...n.data, inputImage: url, r2Url: url, imageNaturalRatio: naturalRatio, status: "done" as const, errorMsg: undefined, hasError: false },
+            } : downstream.has(n.id) ? invalidateOutputs(n) : n);
+            replaced = true;
+            return {
+              nodes,
+              undoStack: [...s.undoStack.slice(-(MAX_UNDO - 1)), { nodes: s.nodes, edges: s.edges }],
+              redoStack: [],
+              spaces: syncSpace(s.spaces, s.activeSpaceId, nodes, s.edges, s.nodeCounters),
+            };
+          });
+          return replaced;
+        },
+
         updateNodeData: (id, data) =>
           set((s) => {
             const nodes = s.nodes.map((n) =>
-              n.id === id ? { ...n, data: { ...n.data, ...data } } : n
+              n.id === id ? { ...n, data: {
+                ...n.data,
+                // Invalidate cached reference frames whenever the active output changes.
+                ...(n.type === "generateNode" && "imageUrl" in data && data.imageUrl !== n.data.imageUrl
+                  ? { r2Url: undefined, inputImage: undefined, capturedFrameUrl: undefined } : {}),
+                ...(n.type === "videoGeneratorNode" && "videoUrl" in data && data.videoUrl !== n.data.videoUrl
+                  ? { r2Url: undefined, capturedFrameUrl: undefined, eagerStartFrameUrl: undefined, eagerEndFrameUrl: undefined } : {}),
+                ...data,
+              } } : n
             );
 
             // Capture param changes into per-type defaults so new nodes inherit them
@@ -730,14 +761,14 @@ export const useWorkflowStore = create<WorkflowStore>()(
           // Strip base64 inputImage — only the durable r2Url survives reload
           nodes: sp.nodes.map((n) => ({
             ...n,
-            data: { ...n.data, inputImage: undefined },
+            data: { ...n.data, inputImage: undefined, pendingGenerate: undefined, pipelineStarting: undefined, pipelineQueued: undefined },
           })),
         })),
         activeSpaceId: s.activeSpaceId,
         // Also persist the live copies so a page refresh rehydrates correctly
         nodes: s.nodes.map((n) => ({
           ...n,
-          data: { ...n.data, inputImage: undefined },
+          data: { ...n.data, inputImage: undefined, pendingGenerate: undefined, pipelineStarting: undefined, pipelineQueued: undefined },
         })),
         edges:        s.edges,
         nodeCounters: s.nodeCounters,

@@ -799,8 +799,15 @@ export default function GenerateNode({ id, data, selected }: NodeProps<GenerateN
   useEffect(() => { generateRef.current = generate; }, [generate]);
   useEffect(() => {
     if (!data.pendingGenerate) return;
-    updateNodeData(id, { pendingGenerate: false });
-    generateRef.current();
+    updateNodeData(id, { pendingGenerate: false, pipelineStarting: true });
+    const spaceId = useWorkflowStore.getState().activeSpaceId;
+    generateRef.current().catch((error: unknown) => {
+      if (useWorkflowStore.getState().activeSpaceId !== spaceId) return;
+      updateNodeData(id, { status: "error", errorMsg: error instanceof Error ? error.message : String(error) });
+    }).finally(() => {
+      if (useWorkflowStore.getState().activeSpaceId !== spaceId) return;
+      updateNodeData(id, { pipelineStarting: false });
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.pendingGenerate]);
 

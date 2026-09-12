@@ -95,7 +95,7 @@ export function useSpaceSync() {
           data:    {
             nodes: sp.nodes.map((n) => ({
               ...n,
-              data: { ...n.data, inputImage: undefined },
+              data: { ...n.data, inputImage: undefined, pendingGenerate: undefined, pipelineStarting: undefined, pipelineQueued: undefined },
             })),
             edges:        sp.edges,
             nodeCounters: sp.nodeCounters,
