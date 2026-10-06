@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState, Suspense } fr
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
+import { useVideoModes } from "@/hooks/use-video-modes";
 import { IMAGE_MODELS, VIDEO_MODELS, AZURE_POPULAR_SIZES, validateAzureCustomSize } from "@/lib/modelConfig";
 import { PROVIDERS, getModelProvider, setModelProvider, modelHasProviderChoice } from "@/lib/providers";
 import { useWorkflowStore } from "@/lib/store";
@@ -2310,7 +2311,7 @@ function GalleryInner() {
           aspectRatio,
           duration,
           ...(vm?.sound ? { sound } : {}),
-          ...(vm?.modes?.length ? { mode: mode || vm.defaultMode || "pro" } : {}),
+          ...(vm?.modes?.length ? { mode: mode || vm.defaultMode || "pro" } : vm?.dynamicModes && mode ? { mode } : {}),
           resolution: vm && "resolutions" in vm && vm.resolutions?.length ? resolution || vm.defaultResolution : undefined,
           ...(startFrameUrl               ? { startFrameUrl }               : {}),
           ...(endFrameUrl                 ? { endFrameUrl }                 : {}),
@@ -2787,7 +2788,11 @@ function GalleryInner() {
     : (imgModel?.apiInput.qualityOptions ?? ["2k", "4k"]);
   const azureResolutionOpts: string[] = isAzureProvider ? (imgModel?.azureResolutionOptions ?? []) : [];
   const durations = vidModel?.durations ?? [];
-  const vidModes = vidModel?.modes ?? [];
+  const vidModes = useVideoModes(vidModel);
+  // Runtime catalogues (Restyle presets): keep the selected mode valid once the list loads.
+  useEffect(() => {
+    if (vidModel?.dynamicModes && vidModes.length > 0 && !vidModes.some(m => m.value === mode)) setMode(vidModes[0].value);
+  }, [vidModel?.dynamicModes, vidModes, mode]);
   const activeModel = models.find(m => m.id === modelId);
   const hasRefImgs = refImages.length > 0;
   const allUploaded = refImages.every(r => !r.uploading);

@@ -109,6 +109,7 @@ export function estimateVideoCredits({ model, duration, resolution, mode, sound 
   now?: number;
 }): CreditEstimate {
   if (!model) return unavailable();
+  if (model.apiInput.higgsfield) return unavailable("Generated with the Higgsfield API, billed in Higgsfield credits (not Kie.ai).");
   const id = model.id;
   if ((id === "seedance-2-fast" || id === "seedance-2-mini") && now >= Date.parse("2026-10-07T06:00:00Z")) {
     return unavailable("The verified Kie.ai promotional price has expired. Check current pricing.");

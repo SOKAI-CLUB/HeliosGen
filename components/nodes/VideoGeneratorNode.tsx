@@ -11,6 +11,7 @@ import NodeActionBar from "./NodeActionBar";
 import { useWorkflowStore, NodeData } from "@/lib/store";
 import { resolveInputs } from "@/lib/executor";
 import { createClient } from "@/lib/supabase/client";
+import { useVideoModes } from "@/hooks/use-video-modes";
 import { useReadOnly } from "@/lib/readOnlyContext";
 import { ShieldBan } from "lucide-react";
 import { VIDEO_MODELS as VIDEO_MODEL_CFG } from "@/lib/modelConfig";
@@ -375,7 +376,12 @@ export default function VideoGeneratorNode({ id, data, selected }: NodeProps<Vid
   const videoModelId = (data.videoModel as string) ?? "kling-3.0";
   const cfg = VIDEO_MODEL_CFG.find((m) => m.id === videoModelId) ?? VIDEO_MODEL_CFG[0];
 
-  const mode = (data.klingMode as string) ?? cfg.defaultMode ?? "";
+  const modeOptions = useVideoModes(cfg);
+  const savedMode = (data.klingMode as string) ?? cfg.defaultMode ?? "";
+  // Runtime catalogues (Restyle presets) may drop a saved value — fall back to the first option.
+  const mode = cfg.dynamicModes && modeOptions.length > 0 && !modeOptions.some((m) => m.value === savedMode)
+    ? modeOptions[0].value
+    : savedMode;
   const resolution = (data.grokResolution as string) ?? cfg.defaultResolution ?? "";
   const duration = (data.duration as number) ?? cfg.defaultDuration;
   const aspectRatio = (data.aspectRatio as string) ?? cfg.defaultRatio;
@@ -586,6 +592,12 @@ export default function VideoGeneratorNode({ id, data, selected }: NodeProps<Vid
         : `Reference images (up to ${cfg.maxResources})`;
     if (h.id === "referenceVideo" && cfg.maxReferenceVideos)
       label = `Reference videos (up to ${cfg.maxReferenceVideos})`;
+    if (cfg.apiInput.higgsfield === "genjutsu" || cfg.apiInput.higgsfield === "genjutsu-restyle") {
+      if (h.id === "referenceVideo") label = "Source video (4–30 s)";
+      if (h.id === "resource") label = cfg.apiInput.higgsfield === "genjutsu-restyle"
+        ? `Character images (optional, up to ${cfg.maxResources})`
+        : `Reference images (1–${cfg.maxResources})`;
+    }
     if (h.id === "audioRef" && cfg.maxReferenceAudios)
       label = `Reference audios (up to ${cfg.maxReferenceAudios})`;
     if (h.id === "startFrame" && cfg.apiInput.useMotionControl) {
@@ -1077,7 +1089,7 @@ export default function VideoGeneratorNode({ id, data, selected }: NodeProps<Vid
       prompt: finalPrompt,
       aspectRatio,
       duration,
-      ...(cfg.modes?.length ? { mode } : {}),
+      ...(modeOptions.length ? { mode } : {}),
       resolution,
       ...(cfg.sound ? { sound } : {}),
       startFrameUrl: finalStartFrameUrl,
@@ -1154,7 +1166,7 @@ export default function VideoGeneratorNode({ id, data, selected }: NodeProps<Vid
       }
     }, 3000);
   }, [id, nodes, edges, prompt, sound, seed, duration, aspectRatio, videoModelId, veoMode, isVeo,
-    mode, resolution, cfg, debugMode, textEdge, updateNodeData, setAuthModalOpen, flashEdgeError, kieKeySet, addToast]);
+    mode, modeOptions, resolution, cfg, debugMode, textEdge, updateNodeData, setAuthModalOpen, flashEdgeError, kieKeySet, addToast]);
 
   const handleGenerateBatch = useCallback(() => {
     generate();
@@ -1792,7 +1804,7 @@ export default function VideoGeneratorNode({ id, data, selected }: NodeProps<Vid
 
         {/* ── Bottom overlay control bar ── */}
         {(() => {
-          const modePicker = cfg.modes ? (
+          const modePicker = modeOptions.length > 0 ? (
             <div className="relative shrink-0">
               <div className="flex items-center rounded-full" style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", border: "1px solid rgba(255,255,255,0.07)" }}>
                 <button
@@ -1800,7 +1812,7 @@ export default function VideoGeneratorNode({ id, data, selected }: NodeProps<Vid
                   onClick={() => { setModeOpen((o) => !o); setModelOpen(false); setRatioOpen(false); setDurOpen(false); setGrokResOpen(false); }}
                   className="flex items-center gap-1.5 pl-2 pr-1.5 py-1 hover:brightness-125 transition-all whitespace-nowrap"
                 >
-                  <span className="text-[11px] text-white/70">{cfg.modes.find((m) => m.value === mode)?.label ?? mode}</span>
+                  <span className="text-[11px] text-white/70">{modeOptions.find((m) => m.value === mode)?.label ?? mode}</span>
                   <ChevronIcon open={modeOpen} />
                 </button>
                 {cfg.apiInput.useMotionControl && (
@@ -1818,7 +1830,7 @@ export default function VideoGeneratorNode({ id, data, selected }: NodeProps<Vid
                 )}
               </div>
               <FloatMenu open={modeOpen}>
-                {cfg.modes.map((m) => (
+                {modeOptions.map((m) => (
                   <FloatItem key={m.value} active={mode === m.value} onClick={() => { updateNodeData(id, { klingMode: m.value }); setModeOpen(false); }}>
                     {m.label}
                   </FloatItem>

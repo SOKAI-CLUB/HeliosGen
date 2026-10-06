@@ -3,6 +3,7 @@ import { jobStore } from "@/lib/jobStore";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { GUEST_MODE } from "@/lib/guestMode";
 import * as guestDb from "@/lib/guest/db";
+import { ensureHiggsfieldPolling, isHiggsfieldTaskId } from "@/lib/server/higgsfield";
 
 async function recoverJob(taskId: string): Promise<"done" | "error" | "pending" | "not_found"> {
   if (GUEST_MODE) {
@@ -51,6 +52,8 @@ export async function GET(req: NextRequest) {
   if (!taskId) {
     return NextResponse.json({ error: "taskId is required" }, { status: 400 });
   }
+
+  if (isHiggsfieldTaskId(taskId)) ensureHiggsfieldPolling(taskId);
 
   const result = jobStore.get(taskId);
 

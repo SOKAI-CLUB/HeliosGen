@@ -4,6 +4,7 @@ import { jobEvents } from "@/lib/jobEvents";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { GUEST_MODE } from "@/lib/guestMode";
 import * as guestDb from "@/lib/guest/db";
+import { ensureHiggsfieldPolling, isHiggsfieldTaskId } from "@/lib/server/higgsfield";
 
 const SSE_HEADERS = {
   "Content-Type": "text/event-stream",
@@ -51,6 +52,13 @@ async function recoverJob(taskId: string): Promise<JobResult | null> {
 export async function GET(req: NextRequest) {
   const taskId = req.nextUrl.searchParams.get("taskId");
   if (!taskId) return new Response("taskId required", { status: 400 });
+
+  // Higgsfield jobs are polled server-side; (re)start the poller in case the
+  // process restarted while the job was pending.
+  if (isHiggsfieldTaskId(taskId)) {
+    if (!jobStore.get(taskId) && !(await recoverJob(taskId))) jobStore.set(taskId, { status: "pending", type: "video" });
+    ensureHiggsfieldPolling(taskId);
+  }
 
   // Already settled in jobStore — respond immediately, no stream needed
   const existing = jobStore.get(taskId);

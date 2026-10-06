@@ -129,3 +129,9 @@ test("Wan models use per-video tables or per-second rates", () => {
   assert.equal(video("wan-3-0-prime", { duration: 5, resolution: "480p" }).credits, 61);
   assert.equal(video("wan-3-0", { duration: 5, referenceVideoDurations: [3] }).unit, "second");
 });
+
+test("Higgsfield models never show Kie.ai credits", () => {
+  for (const id of ["hf-genjutsu-motion-transfer", "hf-genjutsu-restyle", "hf-cinema-studio-4", "hf-ltx-2-5-pro"]) {
+    assert.equal(video(id, { duration: 6 }).credits, null);
+  }
+});

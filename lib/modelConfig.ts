@@ -467,8 +467,21 @@ export interface VideoModel {
     resolutionMap?: Record<string, string>;
     /** When true, first/last frames exclude every reference array (images, videos and audios) */
     framesExcludeAllReferences?: boolean;
+    /**
+     * When set, the model is generated through the Higgsfield API instead of kie.ai.
+     * `apiId` is the Higgsfield endpoint path; `imageApiId` (if any) is used when a start frame is provided.
+     */
+    higgsfield?: "genjutsu" | "genjutsu-restyle" | "cinema-studio" | "ltx";
   };
+  /**
+   * When set, mode options are loaded at runtime instead of `modes`
+   * (e.g. Genjutsu Restyle style presets from the Higgsfield catalogue).
+   */
+  dynamicModes?: "higgsfield-restyle-presets";
 }
+
+/** Models served by Higgsfield are billed in Higgsfield credits and need HIGGSFIELD_API_KEY. */
+export const isHiggsfieldModel = (model?: Pick<VideoModel, "apiInput">) => Boolean(model?.apiInput.higgsfield);
 
 export const VIDEO_MODELS: VideoModel[] = [
   // ── Google ──────────────────────────────────────────────────────────────────
@@ -1070,6 +1083,153 @@ export const VIDEO_MODELS: VideoModel[] = [
       useWan: true,
       wanImageKey: "image_url",
       promptMaxLength: 5000,
+    },
+  },
+  // ── Higgsfield (direct API, not available on kie.ai) ─────────────────────────
+  {
+    id: "hf-genjutsu-motion-transfer",
+    apiId: "higgsfield/genjutsu/motion-transfer/v1.0",
+    name: "Genjutsu Motion Transfer",
+    provider: "Higgsfield",
+    ratios: [],    // framing follows the source video
+    durations: [], // output length follows the source video (4–30 s)
+    defaultDuration: 0,
+    defaultRatio: "16:9",
+    handles: ["prompt", "referenceVideo", "resource"],
+    requiredHandles: ["referenceVideo", "resource"],
+    sound: false,
+    promptOptional: true,
+    maxResources: 8,
+    maxReferenceVideos: 1,
+    resolutions: ["480p", "720p", "1080p"],
+    defaultResolution: "720p",
+    apiInput: { durationMin: 0, durationMax: 0, resolutionKey: "resolution", promptMaxLength: 10000, higgsfield: "genjutsu" },
+  },
+  {
+    id: "hf-genjutsu-object-swap",
+    apiId: "higgsfield/genjutsu/object-swap/v1.0",
+    name: "Genjutsu Object Swap",
+    provider: "Higgsfield",
+    ratios: [],
+    durations: [],
+    defaultDuration: 0,
+    defaultRatio: "16:9",
+    handles: ["prompt", "referenceVideo", "resource"],
+    requiredHandles: ["referenceVideo", "resource"],
+    sound: false,
+    promptOptional: true,
+    maxResources: 8,
+    maxReferenceVideos: 1,
+    resolutions: ["480p", "720p", "1080p"],
+    defaultResolution: "720p",
+    apiInput: { durationMin: 0, durationMax: 0, resolutionKey: "resolution", promptMaxLength: 10000, higgsfield: "genjutsu" },
+  },
+  {
+    id: "hf-genjutsu-restyle",
+    apiId: "higgsfield/genjutsu/restyle/v1.0",
+    name: "Genjutsu Restyle",
+    provider: "Higgsfield",
+    ratios: [],
+    durations: [],
+    defaultDuration: 0,
+    defaultRatio: "16:9",
+    handles: ["prompt", "referenceVideo", "resource"],
+    requiredHandles: ["referenceVideo"],
+    sound: false,
+    promptOptional: true,
+    maxResources: 5,
+    maxReferenceVideos: 1,
+    dynamicModes: "higgsfield-restyle-presets",
+    resolutions: ["480p", "720p", "1080p"],
+    defaultResolution: "720p",
+    apiInput: { durationMin: 0, durationMax: 0, resolutionKey: "resolution", promptMaxLength: 10000, higgsfield: "genjutsu-restyle" },
+  },
+  {
+    id: "hf-cinema-studio-4",
+    apiId: "higgsfield/cinema-studio/4.0",
+    name: "Cinema Studio 4.0",
+    provider: "Higgsfield",
+    ratios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
+    durations: [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30],
+    defaultDuration: 5,
+    defaultRatio: "16:9",
+    handles: ["prompt", "resource", "referenceVideo", "audioRef"],
+    sound: true,
+    maxResources: 30,
+    maxReferenceVideos: 10,
+    maxReferenceAudios: 10,
+    // Genre is optional: "auto" omits it and lets the director choose.
+    modes: [
+      { value: "auto", label: "Auto genre" },
+      { value: "epic", label: "Epic" },
+      { value: "drama", label: "Drama" },
+      { value: "noir", label: "Noir" },
+      { value: "comedy", label: "Comedy" },
+      { value: "horror", label: "Horror" },
+      { value: "action", label: "Action" },
+    ],
+    defaultMode: "auto",
+    resolutions: ["480p", "720p"],
+    defaultResolution: "720p",
+    apiInput: {
+      aspectRatioKey: "aspect_ratio",
+      durationKey: "duration",
+      durationMin: 4,
+      durationMax: 30,
+      resolutionKey: "resolution",
+      soundKey: "generate_audio",
+      promptMaxLength: 20000,
+      higgsfield: "cinema-studio",
+    },
+  },
+  {
+    id: "hf-ltx-2-5-pro",
+    apiId: "lightricks/ltx-2.5/text-to-video/pro",
+    imageApiId: "lightricks/ltx-2.5/image-to-video/pro",
+    name: "LTX-2.5 Pro",
+    provider: "Higgsfield",
+    ratios: ["16:9", "9:16"],
+    durations: [6, 8, 10],
+    defaultDuration: 6,
+    defaultRatio: "16:9",
+    handles: ["prompt", "startFrame", "endFrame"],
+    sound: true,
+    resolutions: ["720p", "1080p"],
+    defaultResolution: "1080p",
+    apiInput: {
+      aspectRatioKey: "aspect_ratio",
+      durationKey: "duration",
+      durationMin: 6,
+      durationMax: 10,
+      resolutionKey: "resolution",
+      soundKey: "generate_audio",
+      promptMaxLength: 5000,
+      higgsfield: "ltx",
+    },
+  },
+  {
+    id: "hf-ltx-2-5-fast",
+    apiId: "lightricks/ltx-2.5/text-to-video/fast",
+    imageApiId: "lightricks/ltx-2.5/image-to-video/fast",
+    name: "LTX-2.5 Fast",
+    provider: "Higgsfield",
+    ratios: ["16:9", "9:16"],
+    durations: [6, 8, 10],
+    defaultDuration: 6,
+    defaultRatio: "16:9",
+    handles: ["prompt", "startFrame", "endFrame"],
+    sound: true,
+    resolutions: ["720p", "1080p", "2k", "4k"],
+    defaultResolution: "720p",
+    apiInput: {
+      aspectRatioKey: "aspect_ratio",
+      durationKey: "duration",
+      durationMin: 6,
+      durationMax: 10,
+      resolutionKey: "resolution",
+      soundKey: "generate_audio",
+      promptMaxLength: 5000,
+      higgsfield: "ltx",
     },
   },
   // ── Kling motion control ─────────────────────────────────────────────────────

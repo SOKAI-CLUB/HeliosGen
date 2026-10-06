@@ -6,6 +6,7 @@ import { VIDEO_MODELS } from "@/lib/modelConfig";
 import { getKieTokenForUser } from "@/lib/getKieToken";
 import { GUEST_MODE, resolveUserId } from "@/lib/guestMode";
 import * as guestDb from "@/lib/guest/db";
+import { generateWithHiggsfield } from "@/lib/server/higgsfieldVideo";
 
 const KIE_BASE = "https://api.kie.ai";
 
@@ -50,15 +51,23 @@ export async function POST(req: NextRequest) {
   const userId = await resolveUserId(req);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const cfg = VIDEO_MODELS.find((m) => m.id === videoModel);
+  if (!cfg) return NextResponse.json({ error: `Unknown video model: ${videoModel}` }, { status: 400 });
+
+  if (cfg.apiInput.higgsfield) {
+    return generateWithHiggsfield(cfg, userId, {
+      prompt, startFrameUrl: rawStartFrame, endFrameUrl: rawEndFrame,
+      referenceImageUrls: rawRefImages, referenceVideoUrls: rawRefVideoUrls, referenceAudioUrls: rawRefAudioUrls,
+      sound, duration, aspectRatio, mode, resolution: rawResolution, debugOnly,
+    });
+  }
+
   const apiKey = await getKieTokenForUser(userId);
   if (!apiKey) return NextResponse.json({ error: "No Kie.ai API key is configured. Add a personal key in Settings or configure the shared server key." }, { status: 503 });
 
   const callbackBase = process.env.CALLBACK_BASE_URL;
   const callBackUrl = rawCallBackUrl || (callbackBase ? `${callbackBase.replace(/\/$/, "")}/api/callback` : undefined);
   if (!callBackUrl) return NextResponse.json({ error: "callBackUrl or CALLBACK_BASE_URL not set" }, { status: 500 });
-
-  const cfg = VIDEO_MODELS.find((m) => m.id === videoModel);
-  if (!cfg) return NextResponse.json({ error: `Unknown video model: ${videoModel}` }, { status: 400 });
 
   const resolution = rawResolution || cfg.defaultResolution || "480p";
   const { apiInput } = cfg;
