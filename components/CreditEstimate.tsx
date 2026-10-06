@@ -1,15 +1,19 @@
 "use client";
 
 import { Coins } from "lucide-react";
-import { CREDIT_PRICING_DATE, CREDIT_PRICING_URL, formatCreditEstimate, type CreditEstimate as Estimate } from "@/lib/creditEstimate";
+import { CREDIT_PRICING_DATE, CREDIT_PRICING_URL, HIGGSFIELD_PRICING_DATE, formatCreditEstimate, type CreditEstimate as Estimate } from "@/lib/creditEstimate";
 
 export default function CreditEstimate({ estimate }: { estimate: Estimate }) {
   const label = formatCreditEstimate(estimate);
-  const description = `${label}. ${estimate.detail} Kie.ai estimate, prices checked ${CREDIT_PRICING_DATE}. Final usage may vary. View pricing.`;
+  const isUsd = estimate.currency === "usd";
+  const source = isUsd
+    ? `Higgsfield list price before discounts, checked ${HIGGSFIELD_PRICING_DATE}`
+    : `Kie.ai estimate, prices checked ${CREDIT_PRICING_DATE}`;
+  const description = `${label}. ${estimate.detail} ${source}. Final usage may vary. View pricing.`;
 
   return (
     <a
-      href={CREDIT_PRICING_URL}
+      href={estimate.pricingUrl ?? CREDIT_PRICING_URL}
       target="_blank"
       rel="noopener noreferrer"
       title={description}

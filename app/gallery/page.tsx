@@ -4,7 +4,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { useVideoModes } from "@/hooks/use-video-modes";
-import { IMAGE_MODELS, VIDEO_MODELS, AZURE_POPULAR_SIZES, validateAzureCustomSize } from "@/lib/modelConfig";
+import { IMAGE_MODELS, VIDEO_MODELS, AZURE_POPULAR_SIZES, isHiggsfieldModel, validateAzureCustomSize } from "@/lib/modelConfig";
 import { PROVIDERS, getModelProvider, setModelProvider, modelHasProviderChoice } from "@/lib/providers";
 import { useWorkflowStore } from "@/lib/store";
 import type { User } from "@supabase/supabase-js";
@@ -4672,8 +4672,14 @@ function GalleryInner() {
               );
             })()}
 
+            {/* Higgsfield models: USD price estimate at the bottom-left of the prompt */}
+            {isVideo && isHiggsfieldModel(vidModel) && (
+              <div style={{ display: "flex", justifyContent: "flex-start", marginTop: promptExpanded ? "auto" : "4px", marginLeft: "-4px" }}>
+                <CreditEstimate estimate={creditEstimate} />
+              </div>
+            )}
             {/* Bottom row: controls + generate button — always stays at the bottom, never moves on expand */}
-            <div style={{ display: "flex", alignItems: "center", gap: "12px", borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "12px", marginTop: promptExpanded ? "auto" : "4px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px", borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "12px", marginTop: promptExpanded && !(isVideo && isHiggsfieldModel(vidModel)) ? "auto" : "4px" }}>
               {/* Controls group */}
               <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "7px", flexWrap: "wrap" }}>
                 {/* Model picker */}
@@ -5056,7 +5062,7 @@ function GalleryInner() {
 
               {/* Character count + Generate button */}
               <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px", flexShrink: 0 }}>
-                <CreditEstimate estimate={creditEstimate} />
+                {!(isVideo && isHiggsfieldModel(vidModel)) && <CreditEstimate estimate={creditEstimate} />}
                 <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                 {promptMaxLength !== null && !multiPromptMode && (
                   <div

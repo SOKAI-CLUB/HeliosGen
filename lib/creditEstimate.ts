@@ -6,11 +6,34 @@ export const CREDIT_PRICING_DATE = "2026-09-05";
 export const CREDIT_PRICING_URL = "https://kie.ai/pricing";
 
 export interface CreditEstimate {
+  /** Amount in Kie.ai credits, or in US dollars when `currency` is "usd". */
   credits: number | null;
   maxCredits?: number;
   unit?: "second";
+  /** "usd" for providers billed in dollars (Higgsfield list prices). */
+  currency?: "usd";
+  /** Pricing page for this estimate (defaults to the Kie.ai pricing page). */
+  pricingUrl?: string;
   detail: string;
 }
+
+// Higgsfield list prices (USD, before account discounts), from the model pages
+// on https://open.higgsfield.ai/models/…, checked 2026-10-06.
+export const HIGGSFIELD_PRICING_DATE = "2026-10-06";
+/** Genjutsu: $/s of source video, rounded up to whole seconds, capped at 30 s. */
+const GENJUTSU_USD_PER_SECOND: Rates = { "480p": 0.318, "720p": 0.681, "1080p": 1.632 };
+/** LTX-2.5: $/s of generated video. */
+const LTX_USD_PER_SECOND: Record<string, Rates> = {
+  "hf-ltx-2-5-pro": { "720p": 0.12, "1080p": 0.17 },
+  "hf-ltx-2-5-fast": { "720p": 0.09, "1080p": 0.13, "2k": 0.19, "4k": 0.3 },
+};
+/**
+ * Cinema Studio 4.0 is token-metered:
+ * tokens = ceil((input video s + output s) × width × height × 24 / 1024),
+ * $0.0214 per 1,000 tokens, or $0.01284 when a video reference is attached.
+ * Pixel counts are the 16:9 frame sizes; other ratios keep roughly the same area.
+ */
+const CINEMA_STUDIO_PIXELS: Rates = { "480p": 854 * 480, "720p": 1280 * 720 };
 
 type Rates = Record<string, number>;
 const IMAGE_RATES: Record<string, number | Rates> = {
@@ -109,7 +132,7 @@ export function estimateVideoCredits({ model, duration, resolution, mode, sound 
   now?: number;
 }): CreditEstimate {
   if (!model) return unavailable();
-  if (model.apiInput.higgsfield) return unavailable("Generated with the Higgsfield API, billed in Higgsfield credits (not Kie.ai).");
+  if (model.apiInput.higgsfield) return estimateHiggsfieldUsd({ model, duration, resolution, count, referenceVideoDurations });
   const id = model.id;
   if ((id === "seedance-2-fast" || id === "seedance-2-mini") && now >= Date.parse("2026-10-07T06:00:00Z")) {
     return unavailable("The verified Kie.ai promotional price has expired. Check current pricing.");
@@ -179,6 +202,59 @@ export function estimateVideoCredits({ model, duration, resolution, mode, sound 
   return estimate;
 }
 
+function estimateHiggsfieldUsd({ model, duration, resolution, count, referenceVideoDurations }: {
+  model: VideoModel;
+  duration?: number;
+  resolution?: string;
+  count: number;
+  referenceVideoDurations: (number | null)[];
+}): CreditEstimate {
+  const pricingUrl = `https://open.higgsfield.ai/models/${model.apiId}`;
+  const usd = (detail: string, credits: number | null, unit?: "second"): CreditEstimate =>
+    ({ credits: credits === null ? null : Math.round(credits * 1000) / 1000, currency: "usd", pricingUrl, detail, ...(unit ? { unit } : {}) });
+  if (!Number.isInteger(count) || count < 1) return usd("Invalid generation count.", null);
+  const res = (resolution || model.defaultResolution || "720p").toLowerCase();
+  const batch = count > 1 ? ` × ${count} generations` : "";
+  const label = `${model.name} · ${res.toUpperCase()}`;
+  const videoSeconds = referenceVideoDurations.every(validSeconds)
+    ? referenceVideoDurations.reduce<number>((sum, value) => sum + (value ?? 0), 0)
+    : null;
+  const hasVideo = referenceVideoDurations.length > 0;
+
+  switch (model.apiInput.higgsfield) {
+    case "genjutsu":
+    case "genjutsu-restyle": {
+      const rate = GENJUTSU_USD_PER_SECOND[res];
+      if (rate === undefined) return usd("No published Higgsfield price for this resolution.", null);
+      const source = referenceVideoDurations[0];
+      if (!validSeconds(source)) return usd(`${label} · $${rate}/s of source video. Connect a source video to estimate the total.`, rate, "second");
+      const billed = Math.ceil(Math.min(30, source));
+      return usd(`${label} · $${rate}/s × ${billed}s source video (rounded up, max 30 s)${batch}`, rate * billed * count);
+    }
+    case "cinema-studio": {
+      const pixels = CINEMA_STUDIO_PIXELS[res];
+      const output = Math.max(model.apiInput.durationMin, Math.min(model.apiInput.durationMax, duration ?? model.defaultDuration));
+      if (pixels === undefined || !validSeconds(output)) return usd("No published Higgsfield price for these settings.", null);
+      const per1k = hasVideo ? 0.01284 : 0.0214;
+      if (hasVideo && videoSeconds === null) {
+        const perSecond = pixels * 24 / 1024 * per1k / 1000;
+        return usd(`${label} · ≈ $${perSecond.toFixed(3)}/s of input + output video. Reference duration unknown.`, perSecond, "second");
+      }
+      const seconds = output + (videoSeconds ?? 0);
+      const tokens = Math.ceil(seconds * pixels * 24 / 1024);
+      return usd(`${label} · ${tokens.toLocaleString("en-US")} video tokens (${seconds}s${hasVideo ? ` incl. ${videoSeconds}s input` : ""}) × $${per1k}/1k${batch}`, tokens * per1k / 1000 * count);
+    }
+    case "ltx": {
+      const rate = LTX_USD_PER_SECOND[model.id]?.[res];
+      const seconds = Math.max(model.apiInput.durationMin, Math.min(model.apiInput.durationMax, duration ?? model.defaultDuration));
+      if (rate === undefined || !validSeconds(seconds)) return usd("No published Higgsfield price for these settings.", null);
+      return usd(`${label} · $${rate}/s × ${seconds}s${batch}`, rate * seconds * count);
+    }
+    default:
+      return usd("No published Higgsfield price for this model.", null);
+  }
+}
+
 /** The selected passage is the reference actually submitted to Kie.ai. */
 export function getReferenceVideoDuration(reference: { videoDuration?: number; trimStart?: number; trimEnd?: number }): number | null {
   if (reference.trimStart !== undefined && reference.trimEnd !== undefined) {
@@ -191,6 +267,10 @@ export function getReferenceVideoDuration(reference: { videoDuration?: number; t
 export function formatCreditEstimate(estimate: CreditEstimate): string {
   if (estimate.credits === null) return "Estimate unavailable";
   const format = (n: number) => new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(n);
+  if (estimate.currency === "usd") {
+    const usd = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: n < 1 ? 3 : 2 }).format(n);
+    return `≈ ${usd(estimate.credits)}${estimate.unit === "second" ? "/s" : ""}`;
+  }
   const amount = estimate.maxCredits === undefined ? format(estimate.credits) : `${format(estimate.credits)}–${format(estimate.maxCredits)}`;
   return `≈ ${amount} credits${estimate.unit === "second" ? "/s" : ""}`;
 }
@@ -202,5 +282,6 @@ export function combineCreditEstimates(estimates: CreditEstimate[]): CreditEstim
   if (unknown) return unavailable(`Batch total is not available. ${unknown.detail}`);
   const credits = round(estimates.reduce((sum, estimate) => sum + estimate.credits!, 0));
   const maxCredits = round(estimates.reduce((sum, estimate) => sum + (estimate.maxCredits ?? estimate.credits!), 0));
-  return { credits, ...(maxCredits !== credits ? { maxCredits } : {}), detail: `Total for ${estimates.length} prompts. ${estimates.map((estimate) => estimate.detail).join("; ")}` };
+  const { currency, pricingUrl } = estimates[0];
+  return { credits, ...(maxCredits !== credits ? { maxCredits } : {}), ...(currency ? { currency, pricingUrl } : {}), detail: `Total for ${estimates.length} prompts. ${estimates.map((estimate) => estimate.detail).join("; ")}` };
 }

@@ -130,8 +130,18 @@ test("Wan models use per-video tables or per-second rates", () => {
   assert.equal(video("wan-3-0", { duration: 5, referenceVideoDurations: [3] }).unit, "second");
 });
 
-test("Higgsfield models never show Kie.ai credits", () => {
-  for (const id of ["hf-genjutsu-motion-transfer", "hf-genjutsu-restyle", "hf-cinema-studio-4", "hf-ltx-2-5-pro"]) {
-    assert.equal(video(id, { duration: 6 }).credits, null);
-  }
+test("Higgsfield models are estimated in US dollars from published list prices", () => {
+  // Genjutsu: per second of source video, rounded up, capped at 30 s
+  const genjutsu = video("hf-genjutsu-motion-transfer", { resolution: "720p", referenceVideoDurations: [8.1] });
+  assert.equal(genjutsu.currency, "usd");
+  assert.equal(genjutsu.credits, 6.129); // 9 s × $0.681
+  assert.equal(video("hf-genjutsu-restyle", { resolution: "1080p", referenceVideoDurations: [45] }).credits, 48.96); // 30 s × $1.632
+  assert.equal(video("hf-genjutsu-object-swap", { resolution: "480p" }).unit, "second");
+  // Cinema Studio: ceil(s × w × h × 24 / 1024) tokens × $0.0214 / 1k
+  assert.equal(video("hf-cinema-studio-4", { duration: 5, resolution: "720p" }).credits, 2.311); // 108,000 tokens
+  assert.equal(video("hf-cinema-studio-4", { duration: 5, resolution: "720p", referenceVideoDurations: [5] }).credits, 2.773); // 216,000 × $0.01284
+  // LTX-2.5: per second of output
+  assert.equal(video("hf-ltx-2-5-pro", { duration: 8, resolution: "1080p" }).credits, 1.36);
+  assert.equal(video("hf-ltx-2-5-fast", { duration: 10, resolution: "4k", count: 2 }).credits, 6);
+  assert.match(formatCreditEstimate(video("hf-ltx-2-5-pro", { duration: 8, resolution: "1080p" })), /^≈ \$1\.36$/);
 });
