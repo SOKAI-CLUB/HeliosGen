@@ -119,3 +119,13 @@ test("multi-prompt totals preserve fractional prices and unknown states", () => 
   assert.equal(formatCreditEstimate(video("grok-imagine", { duration: 6 })), "≈ 14.4 credits");
   assert.equal(formatCreditEstimate(video("kling-2.6-motion-control")), "≈ 11 credits/s");
 });
+
+test("Wan models use per-video tables or per-second rates", () => {
+  assert.equal(video("wan-2-2-turbo", { resolution: "480p" }).credits, 40);
+  assert.equal(video("wan-2-5", { duration: 10, resolution: "720p" }).credits, 120);
+  assert.equal(video("wan-2-6", { duration: 15, resolution: "1080p", count: 2 }).credits, 630);
+  assert.equal(video("wan-2-7", { duration: 8, resolution: "720p" }).credits, 128);
+  assert.equal(video("wan-3-0", { duration: 10, resolution: "1080p" }).credits, 320);
+  assert.equal(video("wan-3-0-prime", { duration: 5, resolution: "480p" }).credits, 61);
+  assert.equal(video("wan-3-0", { duration: 5, referenceVideoDurations: [3] }).unit, "second");
+});

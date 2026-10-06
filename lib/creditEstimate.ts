@@ -1,6 +1,6 @@
 import type { ImageModel, VideoModel } from "./modelConfig";
 
-// Snapshot of https://kie.ai/pricing, checked 2026-09-05.
+// Snapshot of https://kie.ai/pricing, checked 2026-09-05 (Wan rows added 2026-10-06).
 // Billing rules and source links: docs/credit-estimates.md.
 export const CREDIT_PRICING_DATE = "2026-09-05";
 export const CREDIT_PRICING_URL = "https://kie.ai/pricing";
@@ -51,6 +51,16 @@ const VIDEO_SECOND_RATES: Record<string, Rates> = {
   "happyhorse": { "720p": 28, "1080p": 48 },
   "kling-2.6-motion-control": { "720p": 11, "1080p": 18 },
   "kling-3.0-motion-control": { "720p": 20, "1080p": 27 },
+  "wan-3-0": { "480p": 8, "720p": 16, "1080p": 32 },
+  "wan-3-0-prime": { "480p": 12.2, "720p": 25.2, "1080p": 50.4 },
+  "wan-2-7": { "720p": 16, "1080p": 24 },
+};
+
+/** Wan models billed per video: resolution → duration (s) → credits. */
+const WAN_FIXED_RATES: Record<string, Record<string, Record<number, number>>> = {
+  "wan-2-2-turbo": { "480p": { 0: 40 }, "720p": { 0: 80 } },
+  "wan-2-5": { "720p": { 5: 60, 10: 120 }, "1080p": { 5: 100, 10: 200 } },
+  "wan-2-6": { "720p": { 5: 70, 10: 140, 15: 210 }, "1080p": { 5: 104.5, 10: 209.5, 15: 315 } },
 };
 
 const VEO_RATES: Record<string, Rates> = {
@@ -125,6 +135,16 @@ export function estimateVideoCredits({ model, duration, resolution, mode, sound 
     const rates: Rates = { 4: 63, 6: 84, 8: 105, 10: 126 };
     const base = hasVideo ? 168 : rates[seconds];
     return total(base === undefined ? undefined : base + (res === "4k" ? 84 : 0), 1, count, `${label} · ${hasVideo ? "with video input" : `${seconds}s`} · fixed price / video`);
+  }
+  const wanFixed = WAN_FIXED_RATES[id];
+  if (wanFixed) {
+    const price = wanFixed[res]?.[seconds];
+    return total(price, 1, count, `${label} · ${seconds > 0 ? `${seconds}s` : "5s"} · fixed price / video`);
+  }
+  if ((id === "wan-3-0" || id === "wan-3-0-prime") && hasVideo) {
+    const rate = VIDEO_SECOND_RATES[id]?.[res];
+    if (rate === undefined) return unavailable();
+    return { credits: rate, unit: "second", detail: `${model.name} · ${rate} credits/s. Kie.ai does not publish how reference video seconds are billed.` };
   }
   const seedance = SEEDANCE_RATES[id === "seedance-2-5-edit" ? "seedance-2-5" : id];
   let rate: number | undefined = seedance

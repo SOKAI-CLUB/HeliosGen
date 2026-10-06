@@ -110,12 +110,16 @@ export async function POST(req: NextRequest) {
     if (prompt?.trim())                                        input.prompt                       = prompt;
     if (apiInput.firstFrameKey  && startFrameUrl)              input[apiInput.firstFrameKey]       = startFrameUrl;
     if (apiInput.lastFrameKey   && endFrameUrl)                input[apiInput.lastFrameKey]        = endFrameUrl;
-    if (apiInput.resolutionKey)                                input[apiInput.resolutionKey]       = resolution;
+    if (apiInput.resolutionKey)                                input[apiInput.resolutionKey]       = apiInput.resolutionMap?.[resolution] ?? resolution;
     if (apiInput.soundKey)                                     input[apiInput.soundKey]            = Boolean(sound);
-    // Seedance (and similar): first/last frames and reference images are mutually exclusive
-    if (apiInput.referenceImagesKey && r2RefImages.length > 0 && !startFrameUrl && !endFrameUrl) input[apiInput.referenceImagesKey]  = r2RefImages;
-    if (apiInput.referenceVideosKey && r2RefVideos.length > 0) input[apiInput.referenceVideosKey]  = r2RefVideos;
-    if (apiInput.referenceAudiosKey && r2RefAudios.length > 0) input[apiInput.referenceAudiosKey]  = r2RefAudios;
+    // Seedance (and similar): first/last frames and reference images are mutually exclusive.
+    // Wan 3.0 also excludes reference videos and audios when frames are present.
+    const hasFrame = Boolean(startFrameUrl || endFrameUrl);
+    const allowOtherRefs = !(apiInput.framesExcludeAllReferences && hasFrame);
+    if (apiInput.referenceImagesKey && r2RefImages.length > 0 && !hasFrame)          input[apiInput.referenceImagesKey]  = r2RefImages;
+    if (apiInput.referenceVideosKey && r2RefVideos.length > 0 && allowOtherRefs)    input[apiInput.referenceVideosKey]  = r2RefVideos;
+    if (apiInput.referenceAudiosKey && r2RefAudios.length > 0 && allowOtherRefs)    input[apiInput.referenceAudiosKey]  = r2RefAudios;
+    if (apiInput.seedKey && seed !== undefined && seed !== null && Number(seed) > 0) input[apiInput.seedKey]             = Number(seed);
     if (apiInput.extra)                                        Object.assign(input, apiInput.extra);
 
   } else if (apiInput.useHappyHorse) {
@@ -187,6 +191,29 @@ export async function POST(req: NextRequest) {
         [apiInput.resolutionKey!]:  resolution,
       };
     }
+
+  } else if (apiInput.useWan) {
+    // ── Wan 2.x (text-to-video / image-to-video) ─────────────────────────────
+    const [startFrameUrl, endFrameUrl] = await Promise.all([
+      rawStartFrame ? ensureR2(rawStartFrame, "references").catch(() => rawStartFrame) : Promise.resolve(undefined),
+      rawEndFrame && apiInput.lastFrameKey ? ensureR2(rawEndFrame, "references").catch(() => rawEndFrame) : Promise.resolve(undefined),
+    ]);
+
+    input = { prompt: prompt ?? "" };
+
+    if (startFrameUrl && cfg.imageApiId) {
+      effectiveApiId = cfg.imageApiId;
+      input[apiInput.wanImageKey!] = apiInput.wanImageKey === "image_urls" ? [startFrameUrl] : startFrameUrl;
+      if (apiInput.lastFrameKey && endFrameUrl) input[apiInput.lastFrameKey] = endFrameUrl;
+    } else {
+      effectiveApiId = cfg.apiId;
+      if (apiInput.aspectRatioKey) input[apiInput.aspectRatioKey] = aspectRatio;
+    }
+
+    if (apiInput.durationKey)   input[apiInput.durationKey]   = apiInput.durationAsString ? String(clampedDuration) : clampedDuration;
+    if (apiInput.resolutionKey) input[apiInput.resolutionKey] = resolution;
+    if (apiInput.seedKey && seed !== undefined && seed !== null && Number(seed) > 0) input[apiInput.seedKey] = Number(seed);
+    if (apiInput.extra)         Object.assign(input, apiInput.extra);
 
   } else if (apiInput.useGoogleVeo) {
     // ── Google Veo 3.1 ───────────────────────────────────────────────────────

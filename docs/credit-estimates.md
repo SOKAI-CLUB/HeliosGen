@@ -25,6 +25,8 @@ The calculator uses the same duration bounds and default settings as the model c
 
 [Seedance 2.0/Fast](https://kie.ai/seedance-2-0), [Mini](https://kie.ai/seedance-2-0-mini), and [2.5](https://kie.ai/seedance-2-5) use the output duration without a reference video. With video input they apply a different rate to **input seconds + output seconds**. Selected trims replace the full reference duration. Missing metadata is read using a browser video element with `preload=metadata`; failed metadata never becomes a zero-second reference.
 
+Wan rates were added on **2026-10-06** from the Kie.ai pricing table. Wan 2.2 Turbo (fixed 5 s), 2.5 and 2.6 use per-video prices by resolution and duration; Wan 2.6 1080p is not linear (104.5 / 209.5 / 315). Wan 2.7, 3.0 and 3.0 Prime use per-second rates. Kie.ai does not publish how Wan 3.0 bills reference-video seconds, so with video input the estimate shows the per-second rate only.
+
 Motion Control estimates whole reference seconds, rounded up. Seedance 2.5 Edit requests automatic output duration (`-1`), so its display gives a per-second rate with the billing formula. HappyHorse image-to-video inherits resolution from its input, so it shows a 720p–1080p cost range. Unpublished combinations (including Seedance Fast 1080p and Veo Quality reference mode) show an unavailable estimate.
 
 ## Maintenance and verification
